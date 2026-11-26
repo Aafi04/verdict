@@ -33,14 +33,14 @@
   - [x] `ruff check` clean (`All checks passed!`) and `pytest -v` (`8 passed`)
   - [ ] Gate G2 tunnel / Linux deployment started (awaiting Linux deployment verification)
 
-## Phase 2 - Collect + Verdict core (IN PROGRESS)
+## Phase 2 - Collect + Verdict core (COMPLETE — OFFLINE CORE GREEN)
 - **Goal**: Implement Verdict core models, `FixtureClient`, deterministic statistical/integrity checks, policy engine, template memo, audit/looks logging, CLI (`verdict check`), and comprehensive offline tests (fixtures + tests first).
 - **Definition of done**:
   - `data/fixtures/` contains `ship.json`, `hold.json`, `hold_insufficient_data.json`, `reject_srm.json`, `reject_guardrail.json`, `peeking.json`.
   - `pytest` passes completely offline with `VERDICT_LLM=off`.
   - `verdict check` on every fixture returns the expected verdict (`SHIP`, `HOLD`, `REJECT`).
 - **Checklist**:
-  - [ ] Phase 2 fixtures and tests written first (`data/fixtures/*.json`, `tests/test_checks.py`, `tests/test_policy.py`)
-  - [ ] `verdict/config.py`, `verdict/models.py`, `verdict/client/base.py`, `verdict/client/fixture.py`
-  - [ ] `verdict/checks.py`, `verdict/policy.py`, `verdict/audit.py`, `verdict/memo.py`, `verdict/cli.py`
-  - [ ] `pytest` & `ruff` green; `verdict check` verified on all 6 fixtures offline
+  - [x] Phase 2 fixtures and tests written first (`data/fixtures/*.json`, `tests/test_checks_and_policy.py`, `tests/test_fixture_cli.py`)
+  - [x] `verdict/config.py`, `verdict/models.py`, `verdict/client/base.py`, `verdict/client/fixture.py`
+  - [x] `verdict/checks.py`, `verdict/policy.py`, `verdict/audit.py`, `verdict/memo.py`, `verdict/cli.py`
+  - [x] `ruff check verdict quiz scripts tests` clean (`All checks passed!`) and `pytest -v` green (`17 passed in 1.53s`); `verdict check` verified on all 6 fixtures offline (`SHIP`, `HOLD`, `HOLD` insufficient data, `REJECT` SRM, `REJECT` guardrail, `HOLD` peeking)
