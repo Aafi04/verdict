@@ -39,7 +39,8 @@ def test_render_results_html_for_fixtures_and_audit(tmp_path: Path) -> None:
             audit_path=audit_path,
         )
         assert badge in html
-        assert "SIMULATED DATA" in html
+        assert "Synthetic data:" in html
+        assert "not evidence about human behaviour" in html
         assert "Autonomy Boundary" in html
         if should_have_audit:
             assert "Promote verdict to 100%" in html

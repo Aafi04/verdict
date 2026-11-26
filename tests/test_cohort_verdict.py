@@ -60,6 +60,8 @@ def test_cli_shows_combined_real_synthetic_and_disagreement(tmp_path: Path, caps
     assert "COMBINED VERDICT: SHIP" in html
     assert "REAL-ONLY VERDICT: HOLD" in html
     assert "VERDICT DISAGREEMENT" in html
+    assert "Synthetic data:" in html
+    assert "not evidence about human behaviour" in html
     assert "226" in html
     assert "220" in html
 
@@ -88,6 +90,7 @@ def test_cli_text_memo_no_disagreement_when_real_and_combined_both_hold(
     )
     assert rc == 0
     out = capsys.readouterr().out
+    assert "Synthetic data: primarily synthetic" in out
     assert "Cohorts: combined N=" in out
     assert "Verdicts: combined=HOLD | real-only=HOLD" in out
     assert "DISAGREEMENT" not in out
