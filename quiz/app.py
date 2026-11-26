@@ -230,7 +230,10 @@ def create_app(
             allow_sim_prefix=cfg.simulated_mode,
         )
         if not vid:
-            return RedirectResponse(url="/s1", status_code=303)
+            _, replacement = _get_or_issue_vid(request, cfg)
+            resp = RedirectResponse(url="/s1", status_code=303)
+            _set_vid_cookie(request, resp, replacement)
+            return resp
         visitor = db.get_visitor(vid)
         if visitor is None:
             return RedirectResponse(url="/s1", status_code=303)
@@ -264,7 +267,10 @@ def create_app(
             allow_sim_prefix=cfg.simulated_mode,
         )
         if not vid or db.get_visitor(vid) is None:
-            return RedirectResponse(url="/s1", status_code=303)
+            _, replacement = _get_or_issue_vid(request, cfg) if not vid else (vid, None)
+            resp = RedirectResponse(url="/s1", status_code=303)
+            _set_vid_cookie(request, resp, replacement)
+            return resp
         typed_choice: Choice = choice  # type: ignore[assignment]
         if db.record_choice_once(vid, "s2", typed_choice) and typed_choice == "hold":
             quiz_sdk.track_event("held_clear_win", vid)
@@ -280,7 +286,10 @@ def create_app(
             allow_sim_prefix=cfg.simulated_mode,
         )
         if not vid:
-            return RedirectResponse(url="/", status_code=303)
+            _, replacement = _get_or_issue_vid(request, cfg)
+            resp = RedirectResponse(url="/", status_code=303)
+            _set_vid_cookie(request, resp, replacement)
+            return resp
         visitor = db.get_visitor(vid)
         if visitor is None or not visitor["s1_choice"]:
             return RedirectResponse(url="/s1", status_code=303)

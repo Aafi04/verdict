@@ -129,13 +129,24 @@ def test_tampered_or_sim_cookie_rejected_in_prod_mode(tmp_path: Path) -> None:
     settings = _make_settings(tmp_path, simulated=False)
     app = create_app(settings=settings, sdk=sdk)
 
+    signed_sim = sign_visitor_id("sim-12345678-1234-4234-8234-123456789012", settings.cookie_secret)
     with TestClient(app) as client:
-        # Forged signature or sim- prefix in non-simulated mode must be rejected and re-issued.
-        forged = sign_visitor_id("sim-12345678-1234-4234-8234-123456789012", settings.cookie_secret)
-        client.cookies.set("vid", forged)
+        # On /, /s2, /done, and /s1, a signed sim- cookie in prod must be ignored and replaced.
+        for path in ("/", "/s2", "/done"):
+            client.cookies.clear()
+            client.cookies.set("vid", signed_sim)
+            resp = client.get(path, follow_redirects=False)
+            set_cookie = resp.headers.get("set-cookie", "")
+            assert "vid=" in set_cookie
+            assert "vid=sim-" not in set_cookie
+
+        client.cookies.clear()
+        client.cookies.set("vid", signed_sim)
         r = client.get("/s1")
         assert r.status_code == 200
+        assert "vid=sim-" not in r.headers.get("set-cookie", "")
         assert not sdk.exposures[0].startswith("sim-")
+        assert QuizDatabase(settings.db_path).get_visitor("sim-12345678-1234-4234-8234-123456789012") is None
 
 
 def test_rate_limit_blocks_excess_requests_without_storing_ip(tmp_path: Path) -> None:
