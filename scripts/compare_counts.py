@@ -121,12 +121,24 @@ def main() -> int:
         exp_id = os.getenv("FLAGSMITH_SIM_EXPERIMENT_ID", "2").strip()
         simulated_filter = True
     elif args.env == "development":
-        env_key = os.getenv("FLAGSMITH_ENV_KEY", "").strip()
-        exp_id = os.getenv("FLAGSMITH_EXPERIMENT_ID", "1").strip()
+        env_key = (
+            os.getenv("FLAGSMITH_DEV_ENV_KEY", "").strip()
+            or os.getenv("FLAGSMITH_ENV_KEY", "").strip()
+        )
+        exp_id = (
+            os.getenv("FLAGSMITH_DEV_EXPERIMENT_ID", "").strip()
+            or os.getenv("FLAGSMITH_EXPERIMENT_ID", "1").strip()
+        )
         simulated_filter = False
     else:
-        env_key = os.getenv("FLAGSMITH_PROD_ENV_KEY", "").strip()
-        exp_id = os.getenv("FLAGSMITH_PROD_EXPERIMENT_ID", "").strip()
+        env_key = (
+            os.getenv("FLAGSMITH_PROD_ENV_KEY", "").strip()
+            or os.getenv("FLAGSMITH_ENV_KEY", "").strip()
+        )
+        exp_id = (
+            os.getenv("FLAGSMITH_PROD_EXPERIMENT_ID", "").strip()
+            or os.getenv("FLAGSMITH_EXPERIMENT_ID", "3").strip()
+        )
         simulated_filter = False
 
     if not api_key or not env_key or not exp_id:
