@@ -112,10 +112,16 @@ def build_health_report(
 
     base = flagsmith_url.rstrip("/")
     headers = {"Authorization": f"Api-Key {api_key}"}
+    flagsmith_snapshot_stale = False
     with httpx.Client(timeout=15.0, headers=headers) as client:
         if refresh_exposures:
-            client.post(f"{base}/api/v1/environments/{env_key}/experiments/{exp_id}/exposures/refresh/")
-            time.sleep(1.5)
+            ref_resp = client.post(
+                f"{base}/api/v1/environments/{env_key}/experiments/{exp_id}/exposures/refresh/"
+            )
+            if ref_resp.status_code == 429:
+                flagsmith_snapshot_stale = True
+            else:
+                time.sleep(1.5)
         exp_meta = client.get(f"{base}/api/v1/environments/{env_key}/experiments/{exp_id}/").json()
         exp_payload = client.get(
             f"{base}/api/v1/environments/{env_key}/experiments/{exp_id}/exposures/"
@@ -131,33 +137,40 @@ def build_health_report(
     fs_results_obj = res_payload.get("results") or {}
     fs_srm_p = (fs_results_obj.get("payload") or {}).get("srm_p_value")
 
-    cohort_for_srm = sqlite_real if env_name != "simulation" and sqlite_synthetic["total"] == 0 else (
-        sqlite_synthetic if env_name == "simulation" else sqlite_combined
+    cohort_for_srm = (
+        sqlite_real
+        if env_name != "simulation" and sqlite_synthetic["total"] == 0
+        else (sqlite_synthetic if env_name == "simulation" else sqlite_combined)
     )
     ctrl_n = cohort_for_srm["by_arm"].get("dashboard", 0)
     var_n = cohort_for_srm["by_arm"].get("verdict", 0)
     verdict_srm_p = compute_chi2_srm_p_value(ctrl_n, var_n, control_weight=0.5)
 
-    fs_ctrl = fs_by_arm.get("control", 0)
-    fs_var = fs_by_arm.get("verdict", 0)
-    compared_sqlite = sqlite_synthetic if env_name == "simulation" else sqlite_combined
-    diff_total = compared_sqlite["total"] - fs_total
-    diff_by_arm = {
-        "dashboard_vs_control": compared_sqlite["by_arm"].get("dashboard", 0) - fs_ctrl,
-        "verdict": compared_sqlite["by_arm"].get("verdict", 0) - fs_var,
-    }
-
     srm_fail = (verdict_srm_p is not None and verdict_srm_p < 0.001) or (
         fs_srm_p is not None and float(fs_srm_p) < 0.001
     )
-    if srm_fail:
-        integrity_status = "FAIL_SRM"
-    elif excluded_identities > 0:
-        integrity_status = "WARN_EXCLUDED_IDENTITIES"
-    elif diff_total != 0:
-        integrity_status = "WARN_COUNT_DIFF"
+
+    if flagsmith_snapshot_stale:
+        count_diff: dict[str, Any] | None = None
+        integrity_status = "FAIL_SRM" if srm_fail else "STALE_SNAPSHOT"
     else:
-        integrity_status = "OK"
+        fs_ctrl = fs_by_arm.get("control", 0)
+        fs_var = fs_by_arm.get("verdict", 0)
+        compared_sqlite = sqlite_synthetic if env_name == "simulation" else sqlite_combined
+        diff_total = compared_sqlite["total"] - fs_total
+        diff_by_arm = {
+            "dashboard_vs_control": compared_sqlite["by_arm"].get("dashboard", 0) - fs_ctrl,
+            "verdict": compared_sqlite["by_arm"].get("verdict", 0) - fs_var,
+        }
+        count_diff = {"total": diff_total, "by_arm": diff_by_arm}
+        if srm_fail:
+            integrity_status = "FAIL_SRM"
+        elif excluded_identities > 0:
+            integrity_status = "WARN_EXCLUDED_IDENTITIES"
+        elif diff_total != 0:
+            integrity_status = "WARN_COUNT_DIFF"
+        else:
+            integrity_status = "OK"
 
     return {
         "ts": now.isoformat(),
@@ -172,16 +185,14 @@ def build_health_report(
         "experiment_status": exp_meta.get("status"),
         "quiz_uptime": check_quiz_uptime(quiz_url),
         "sqlite_exposures": sqlite_exposures,
+        "flagsmith_snapshot_stale": flagsmith_snapshot_stale,
         "flagsmith_exposures": {
             "total": fs_total,
             "by_arm": fs_by_arm,
             "excluded_identities": excluded_identities,
             "as_of": fs_as_of,
         },
-        "count_diff": {
-            "total": diff_total,
-            "by_arm": diff_by_arm,
-        },
+        "count_diff": count_diff,
         "srm_p_value_flagsmith": fs_srm_p,
         "srm_p_value_verdict": round(verdict_srm_p, 6) if verdict_srm_p is not None else None,
         "integrity_status": integrity_status,

@@ -17,6 +17,7 @@ from quiz.simulate import (
     P_HOLD_S2_VERDICT,
     P_SHIP_S1_DASHBOARD,
     P_SHIP_S1_VERDICT,
+    build_dry_run_plan,
     default_synthetic_count,
     main,
     run_simulation,
@@ -156,3 +157,81 @@ def test_simulation_batch_size_runs_integrity_checks_and_stops_on_mismatch(tmp_p
     # Stopped after the very first batch of 5 (did not continue to 10)
     db = QuizDatabase(settings.db_path)
     assert db.summarize(cohort="synthetic")["totals"]["exposures"] == 12 + 5
+
+
+def test_dry_run_offset_reproduces_items_50_to_197() -> None:
+    full = build_dry_run_plan(count=198, seed=20261126, offset=0)
+    tail = build_dry_run_plan(count=148, seed=20261126, offset=50)
+    assert tail["offset"] == 50
+    assert tail["count"] == 148
+    assert tail["visitors"] == full["visitors"][50:198]
+
+
+def test_batch_check_retries_once_on_stale_snapshot_then_proceeds_or_aborts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    sdk = StubSdk(default_arm="verdict")
+    settings = QuizSettings(
+        flagsmith_url="http://127.0.0.1:8000",
+        flagsmith_env_key="prod-key",
+        cookie_secret="unit-test-cookie-secret",
+        db_path=tmp_path / "quiz.db",
+        scenarios_dir=DEFAULT_SCENARIOS_DIR,
+        simulated_mode=False,
+        rate_limit_per_min=2,
+        synthetic_token="synth-token-xyz",
+    )
+    app = create_app(settings=settings, sdk=sdk)
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("quiz.simulate.time.sleep", lambda s: sleeps.append(s))
+
+    # Case 1: STALE_SNAPSHOT once -> waits 305s -> retry returns OK -> proceeds cleanly.
+    calls_1 = {"n": 0}
+
+    def stale_then_ok(_sent: int) -> dict:
+        calls_1["n"] += 1
+        if calls_1["n"] == 1:
+            return {
+                "integrity_status": "STALE_SNAPSHOT",
+                "flagsmith_snapshot_stale": True,
+                "count_diff": None,
+            }
+        return {
+            "integrity_status": "OK",
+            "flagsmith_snapshot_stale": False,
+            "count_diff": {"total": 0},
+        }
+
+    summary = run_simulation(
+        "http://testserver",
+        count=5,
+        seed=20261126,
+        synthetic_token="synth-token-xyz",
+        batch_size=5,
+        batch_settle_seconds=0.0,
+        cooldown_wait_seconds=305.0,
+        batch_checker=stale_then_ok,
+        client_factory=lambda **kw: TestClient(app, headers=kw.get("headers", {})),
+    )
+    assert calls_1["n"] == 2
+    assert 305.0 in sleeps
+    assert summary["batch_checks"][0]["integrity_status"] == "OK"
+
+    # Case 2: STALE_SNAPSHOT twice -> aborts without continuing.
+    with pytest.raises(RuntimeError, match="STALE_SNAPSHOT"):
+        run_simulation(
+            "http://testserver",
+            count=10,
+            seed=20261126,
+            synthetic_token="synth-token-xyz",
+            batch_size=5,
+            batch_settle_seconds=0.0,
+            cooldown_wait_seconds=305.0,
+            batch_checker=lambda _s: {
+                "integrity_status": "STALE_SNAPSHOT",
+                "flagsmith_snapshot_stale": True,
+                "count_diff": None,
+            },
+            client_factory=lambda **kw: TestClient(app, headers=kw.get("headers", {})),
+        )

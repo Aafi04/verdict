@@ -68,9 +68,19 @@ def default_synthetic_count(
     return max(0, target_total - db.count_real_exposures(since=since))
 
 
-def build_dry_run_plan(count: int, seed: int) -> dict[str, Any]:
+def _advance_rng_for_offset(rng: random.Random, offset: int) -> None:
+    """Advance PRNG cleanly by `offset` visitors (4 draws per visitor)."""
+    for _ in range(max(0, offset)):
+        rng.random()
+        rng.random()
+        rng.random()
+        rng.random()
+
+
+def build_dry_run_plan(count: int, seed: int, *, offset: int = 0) -> dict[str, Any]:
     """Deterministically plan synthetic visitors without any network/HTTP calls."""
     rng = random.Random(seed)
+    _advance_rng_for_offset(rng, offset)
     arms = {"dashboard": 0, "verdict": 0}
     s1_ship = {"dashboard": 0, "verdict": 0}
     s2_hold = {"dashboard": 0, "verdict": 0}
@@ -78,13 +88,18 @@ def build_dry_run_plan(count: int, seed: int) -> dict[str, Any]:
     visitors: list[dict[str, Any]] = []
 
     for idx in range(count):
-        arm = "dashboard" if rng.random() < 0.50 else "verdict"
+        u_arm = rng.random()
+        u_s1 = rng.random()
+        u_comp = rng.random()
+        u_s2 = rng.random()
+
+        arm = "dashboard" if u_arm < 0.50 else "verdict"
         p_s1 = P_SHIP_S1_DASHBOARD if arm == "dashboard" else P_SHIP_S1_VERDICT
         p_s2 = P_HOLD_S2_DASHBOARD if arm == "dashboard" else P_HOLD_S2_VERDICT
 
-        s1_choice = "ship" if rng.random() < p_s1 else "hold"
-        completed = rng.random() < P_COMPLETE_POST_EXPOSURE
-        s2_choice = ("hold" if rng.random() < p_s2 else "ship") if completed else None
+        s1_choice = "ship" if u_s1 < p_s1 else "hold"
+        completed = u_comp < P_COMPLETE_POST_EXPOSURE
+        s2_choice = ("hold" if u_s2 < p_s2 else "ship") if completed else None
 
         arms[arm] += 1
         if s1_choice == "ship":
@@ -96,7 +111,7 @@ def build_dry_run_plan(count: int, seed: int) -> dict[str, Any]:
 
         visitors.append(
             {
-                "index": idx + 1,
+                "index": offset + idx + 1,
                 "planned_arm": arm,
                 "s1_choice": s1_choice,
                 "s2_choice": s2_choice,
@@ -109,6 +124,7 @@ def build_dry_run_plan(count: int, seed: int) -> dict[str, Any]:
         "dry_run": True,
         "simulated": True,
         "seed": seed,
+        "offset": offset,
         "count": count,
         "model": {
             "s1_ship_dashboard": P_SHIP_S1_DASHBOARD,
@@ -127,14 +143,29 @@ def build_dry_run_plan(count: int, seed: int) -> dict[str, Any]:
     }
 
 
-def _run_health_cmd(health_cmd: str) -> dict[str, Any]:
+def _invoke_health_cmd(health_cmd: str) -> dict[str, Any]:
     proc = subprocess.run(health_cmd, shell=True, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         raise RuntimeError(
             f"Health check command failed (exit {proc.returncode}): {proc.stderr.strip()}"
         )
-    report = json.loads(proc.stdout)
+    return json.loads(proc.stdout)
+
+
+def _check_batch_integrity(
+    fetch_report: Any,
+    *,
+    cooldown_wait_seconds: float,
+) -> dict[str, Any]:
+    report = fetch_report()
     status = report.get("integrity_status")
+    stale = bool(report.get("flagsmith_snapshot_stale")) or status == "STALE_SNAPSHOT"
+    if stale:
+        if cooldown_wait_seconds > 0:
+            time.sleep(cooldown_wait_seconds)
+        report = fetch_report()
+        status = report.get("integrity_status")
+
     diff_total = (report.get("count_diff") or {}).get("total")
     if status != "OK" or diff_total != 0:
         raise RuntimeError(
@@ -149,10 +180,12 @@ def run_simulation(
     count: int,
     seed: int,
     *,
+    offset: int = 0,
     synthetic_token: str = "",
     delay_ms: int = 0,
     batch_size: int = 0,
     batch_settle_seconds: float = 2.0,
+    cooldown_wait_seconds: float = 305.0,
     health_cmd: str = "",
     batch_checker: Any = None,
     test_refresh_idx: int = 0,
@@ -160,6 +193,7 @@ def run_simulation(
 ) -> dict[str, Any]:
     """Send `count` synthetic quiz visits through the normal quiz HTTP routes."""
     rng = random.Random(seed)
+    _advance_rng_for_offset(rng, offset)
     base = base_url.rstrip("/")
     headers: dict[str, str] = {}
     if synthetic_token:
@@ -168,6 +202,7 @@ def run_simulation(
     summary: dict[str, Any] = {
         "synthetic": True,
         "seed": seed,
+        "offset": offset,
         "count": count,
         "arms": {"dashboard": 0, "verdict": 0, "unknown": 0},
         "s1_ship": {"dashboard": 0, "verdict": 0},
@@ -258,14 +293,19 @@ def run_simulation(
         if is_batch_end and (health_cmd or batch_checker is not None):
             if batch_settle_seconds > 0:
                 time.sleep(batch_settle_seconds)
-            report = (
-                batch_checker(sent_so_far)
+            fetcher = (
+                (lambda s=sent_so_far: batch_checker(s))
                 if batch_checker is not None
-                else _run_health_cmd(health_cmd)
+                else (lambda cmd=health_cmd: _invoke_health_cmd(cmd))
+            )
+            report = _check_batch_integrity(
+                fetcher,
+                cooldown_wait_seconds=cooldown_wait_seconds,
             )
             summary["batch_checks"].append(
                 {
                     "sent": sent_so_far,
+                    "global_index_end": offset + sent_so_far,
                     "integrity_status": report.get("integrity_status"),
                     "count_diff_total": (report.get("count_diff") or {}).get("total"),
                 }
@@ -286,10 +326,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Number of synthetic visitors (default: max(0, 200 - real exposures in SQLite))",
     )
     parser.add_argument("--seed", type=int, default=SIM_SEED_DEFAULT)
+    parser.add_argument("--offset", type=int, default=0, help="Skip first N visitors in seeded sequence")
     parser.add_argument("--since", default=EXPERIMENT_STARTED_AT_UTC)
     parser.add_argument("--delay-ms", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=0, help="Run integrity check every N visits")
     parser.add_argument("--batch-settle-seconds", type=float, default=2.0)
+    parser.add_argument(
+        "--cooldown-wait-seconds",
+        type=float,
+        default=305.0,
+        help="Wait duration when Flagsmith exposures/refresh returns STALE_SNAPSHOT (429)",
+    )
     parser.add_argument("--health-cmd", default="", help="Integrity command returning JSON")
     parser.add_argument(
         "--dry-run",
@@ -303,9 +350,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.count is not None
         else default_synthetic_count(Path(args.db_path), since=args.since or None)
     )
+    offset = max(0, int(args.offset))
 
     if args.dry_run:
-        print(json.dumps(build_dry_run_plan(count=count, seed=args.seed), indent=2))
+        print(json.dumps(build_dry_run_plan(count=count, seed=args.seed, offset=offset), indent=2))
         return 0
 
     token = os.getenv("QUIZ_SYNTHETIC_TOKEN", "").strip()
@@ -313,10 +361,12 @@ def main(argv: list[str] | None = None) -> int:
         args.base_url,
         count,
         args.seed,
+        offset=offset,
         synthetic_token=token,
         delay_ms=max(0, int(args.delay_ms)),
         batch_size=max(0, int(args.batch_size)),
         batch_settle_seconds=max(0.0, float(args.batch_settle_seconds)),
+        cooldown_wait_seconds=max(0.0, float(args.cooldown_wait_seconds)),
         health_cmd=args.health_cmd.strip(),
     )
     print(json.dumps(result, indent=2))
