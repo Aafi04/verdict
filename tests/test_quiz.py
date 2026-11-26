@@ -240,3 +240,46 @@ def test_simulated_mode_keeps_noop_sdk_working(tmp_path: Path) -> None:
     with TestClient(create_app(settings=settings)) as client:
         assert client.get("/healthz").status_code == 200
         assert client.get("/s1").status_code == 200
+
+
+def test_env_key_selection_all_four_combinations(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FLAGSMITH_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("QUIZ_COOKIE_SECRET", "unit-test-cookie-secret")
+    monkeypatch.setenv("QUIZ_DB_PATH", str(tmp_path / "quiz.db"))
+
+    # 1. simulated=true, SIM key set, PROD key set -> uses SIM key only
+    monkeypatch.setenv("QUIZ_SIMULATED_MODE", "true")
+    monkeypatch.setenv("FLAGSMITH_SIM_ENV_KEY", "sim-key-only")
+    monkeypatch.setenv("FLAGSMITH_ENV_KEY", "prod-key-only")
+    s1 = QuizSettings.from_env()
+    assert s1.simulated_mode is True
+    assert s1.flagsmith_env_key == "sim-key-only"
+
+    # 2. simulated=true, SIM key unset, PROD key set -> empty key -> Noop SDK (never falls back)
+    monkeypatch.delenv("FLAGSMITH_SIM_ENV_KEY", raising=False)
+    monkeypatch.setenv("FLAGSMITH_ENV_KEY", "prod-key-only")
+    s2 = QuizSettings.from_env()
+    assert s2.simulated_mode is True
+    assert s2.flagsmith_env_key == ""
+    with TestClient(create_app(settings=s2)) as client:
+        assert client.get("/healthz").status_code == 200
+        assert client.get("/s1").status_code == 200
+
+    # 3. simulated=false, SIM key set, PROD key set -> uses PROD key only
+    monkeypatch.setenv("QUIZ_SIMULATED_MODE", "false")
+    monkeypatch.setenv("FLAGSMITH_SIM_ENV_KEY", "sim-key-only")
+    monkeypatch.setenv("FLAGSMITH_ENV_KEY", "prod-key-only")
+    s3 = QuizSettings.from_env()
+    assert s3.simulated_mode is False
+    assert s3.flagsmith_env_key == "prod-key-only"
+
+    # 4. simulated=false, SIM key set, PROD key unset -> empty key -> fail closed (never uses SIM key)
+    monkeypatch.setenv("FLAGSMITH_SIM_ENV_KEY", "sim-key-only")
+    monkeypatch.delenv("FLAGSMITH_ENV_KEY", raising=False)
+    s4 = QuizSettings.from_env()
+    assert s4.simulated_mode is False
+    assert s4.flagsmith_env_key == ""
+    with TestClient(create_app(settings=s4)) as client:
+        assert client.get("/healthz").status_code == 503
+        assert client.get("/s1").status_code == 503

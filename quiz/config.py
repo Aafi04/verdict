@@ -51,7 +51,7 @@ class QuizSettings:
         simulated_mode = _parse_bool(os.getenv("QUIZ_SIMULATED_MODE"), default=False)
         env_key = (
             os.getenv("FLAGSMITH_SIM_ENV_KEY", "").strip()
-            if simulated_mode and os.getenv("FLAGSMITH_SIM_ENV_KEY", "").strip()
+            if simulated_mode
             else os.getenv("FLAGSMITH_ENV_KEY", "").strip()
         )
         raw_secret = os.getenv("QUIZ_COOKIE_SECRET", "").strip()
