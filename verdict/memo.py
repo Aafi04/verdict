@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from verdict.models import Experiment, ExperimentResults, Exposure, VerdictResult
+
 CheckStatus = Literal["PASS", "WARN", "FAIL", "HOLD"]
 VerdictDecision = Literal["SHIP", "HOLD", "REJECT"]
 
@@ -98,3 +100,77 @@ def render_memo_text(memo: MemoInput) -> str:
         lines.append("")
         lines.append(f"Recommended action: {memo.next_action}")
     return "\n".join(lines)
+
+
+def memo_from_verdict(
+    experiment: Experiment,
+    exposure: Exposure,
+    results: ExperimentResults,
+    verdict: VerdictResult,
+) -> MemoInput:
+    """Build a MemoInput from live or fixture Verdict evaluation models."""
+    primary = next((m for m in results.metrics if m.role == "primary"), None)
+    guardrail = next((m for m in results.metrics if m.role == "guardrail"), None)
+
+    if primary is None:
+        primary_name = "unknown"
+        lift_str = "n/a"
+        interval_str = "insufficient data"
+        win_prob_str = "n/a"
+    else:
+        primary_name = f"{primary.name} ({primary.expected_direction})"
+        lift_str = (
+            f"{primary.relative_lift:+.1%}"
+            if primary.relative_lift is not None
+            else "insufficient data"
+        )
+        interval_str = (
+            f"[{primary.interval.low:+.1%}, {primary.interval.high:+.1%}]"
+            if primary.interval is not None
+            else "insufficient data (< ~50/arm)"
+        )
+        win_prob_str = (
+            f"{primary.win_probability:.0%}"
+            if primary.win_probability is not None
+            else "insufficient data"
+        )
+
+    arms_desc = ", ".join(f"{arm}={cnt}" for arm, cnt in exposure.counts.items())
+    sample_status = f"{exposure.total} / {experiment.planned_sample} planned ({arms_desc})"
+
+    if guardrail is None:
+        guardrail_status = "none attached (check SQLite log)"
+    elif guardrail.interval is not None:
+        guardrail_status = (
+            f"{guardrail.name}: {guardrail.relative_lift:+.1%} "
+            f"(CI [{guardrail.interval.low:+.1%}, {guardrail.interval.high:+.1%}])"
+            if guardrail.relative_lift is not None
+            else f"{guardrail.name}: CI [{guardrail.interval.low:+.1%}, {guardrail.interval.high:+.1%}]"
+        )
+    else:
+        guardrail_status = (
+            f"{guardrail.name}: {guardrail.control_events}/{guardrail.control_n} ctrl vs "
+            f"{guardrail.variant_events}/{guardrail.variant_n} var (interval pending)"
+        )
+
+    summary_map = {
+        "SHIP": f"Safe to roll out '{verdict.winning_arm}': checks and sample criteria pass.",
+        "HOLD": "Do not ship yet: waiting on planned sample or conclusive credible interval.",
+        "REJECT": "Do NOT ship: integrity or guardrail check failed.",
+    }
+    checks = [MemoCheck(name=c.name, status=c.status, detail=c.detail) for c in verdict.checks]
+    return MemoInput(
+        experiment_name=experiment.name,
+        verdict=verdict.verdict,
+        summary=summary_map[verdict.verdict],
+        primary_metric=primary_name,
+        lift=lift_str,
+        interval=interval_str,
+        win_probability=win_prob_str,
+        sample_status=sample_status,
+        guardrail_status=guardrail_status,
+        checks=checks,
+        reasons=verdict.reasons,
+        next_action=verdict.next_action,
+        simulated=experiment.simulated,
+    )

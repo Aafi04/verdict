@@ -17,7 +17,7 @@ from verdict.checks import (
 )
 from verdict.client.fixture import FixtureClient
 from verdict.config import VerdictThresholds
-from verdict.models import Experiment, Exposure, ExperimentResults, Interval, MetricResult
+from verdict.models import Experiment, ExperimentResults, Exposure, Interval, MetricResult
 from verdict.policy import evaluate_verdict
 
 
