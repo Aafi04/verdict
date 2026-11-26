@@ -1,0 +1,53 @@
+{
+  "experiment": {
+    "id": "peeking",
+    "name": "result_view_peeking_fixture",
+    "hypothesis": "Repeated looks before planned sample trigger peeking warning.",
+    "status": "running",
+    "feature_name": "result_view",
+    "planned_sample": 200,
+    "simulated": true
+  },
+  "exposures": {
+    "as_of": "2026-11-27T18:00:00Z",
+    "planned_weights": {"dashboard": 0.5, "verdict": 0.5},
+    "counts": {"dashboard": 65, "verdict": 65},
+    "excluded_identities": 0
+  },
+  "results": {
+    "as_of": "2026-11-27T18:00:00Z",
+    "srm_p_value": 1.0,
+    "metrics": [
+      {
+        "name": "shipped_ambiguous",
+        "role": "primary",
+        "expected_direction": "decrease",
+        "control_arm": "dashboard",
+        "variant_arm": "verdict",
+        "control_n": 65,
+        "control_events": 39,
+        "variant_n": 65,
+        "variant_events": 21,
+        "relative_lift": -0.462,
+        "ci_low": -0.660,
+        "ci_high": -0.180,
+        "win_probability": 0.992
+      },
+      {
+        "name": "held_clear_win",
+        "role": "guardrail",
+        "expected_direction": "do_not_increase",
+        "control_arm": "dashboard",
+        "variant_arm": "verdict",
+        "control_n": 65,
+        "control_events": 5,
+        "variant_n": 65,
+        "variant_events": 6,
+        "relative_lift": 0.200,
+        "ci_low": -0.420,
+        "ci_high": 1.400,
+        "win_probability": 0.390
+      }
+    ]
+  }
+}

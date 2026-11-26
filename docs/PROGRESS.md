@@ -30,5 +30,17 @@
   - [x] `scenarios/s1.json`, `scenarios/s2.json`, `verdict/memo.py`, `quiz/` (`app.py`, `config.py`, `db.py`, `flagsmith_sdk.py`, `security.py`, `simulate.py`, templates, CSS), `scripts/compare_counts.py`, `tests/test_quiz.py` implemented
   - [x] 20 `sim-` visits completed; `scripts/compare_counts.py --env simulation --refresh` confirmed exact match: SQLite `20` exposures (`11 dashboard`, `9 verdict`), `11` `shipped_ambiguous` (`7`/`4`), `4` `held_clear_win`; Flagsmith `control: 11`, `verdict: 9` and `shipped_ambiguous: 7 + 4 = 11`
   - [x] Double-click `Occurrence` deduplication confirmed in Flagsmith `results_query.py` and empirically (`12` raw `shipped_ambiguous` events -> `11` distinct / `11` counted)
-  - [x] `ruff check` clean (`All checks passed!`) and `pytest -v` (`4 passed`)
-  - [ ] Gate G2 tunnel started (awaiting user approval on Cloudflare Quick Tunnels + `EXPERIMENT.md` freeze time for `Production` launch)
+  - [x] `ruff check` clean (`All checks passed!`) and `pytest -v` (`8 passed`)
+  - [ ] Gate G2 tunnel / Linux deployment started (awaiting Linux deployment verification)
+
+## Phase 2 - Collect + Verdict core (IN PROGRESS)
+- **Goal**: Implement Verdict core models, `FixtureClient`, deterministic statistical/integrity checks, policy engine, template memo, audit/looks logging, CLI (`verdict check`), and comprehensive offline tests (fixtures + tests first).
+- **Definition of done**:
+  - `data/fixtures/` contains `ship.json`, `hold.json`, `hold_insufficient_data.json`, `reject_srm.json`, `reject_guardrail.json`, `peeking.json`.
+  - `pytest` passes completely offline with `VERDICT_LLM=off`.
+  - `verdict check` on every fixture returns the expected verdict (`SHIP`, `HOLD`, `REJECT`).
+- **Checklist**:
+  - [ ] Phase 2 fixtures and tests written first (`data/fixtures/*.json`, `tests/test_checks.py`, `tests/test_policy.py`)
+  - [ ] `verdict/config.py`, `verdict/models.py`, `verdict/client/base.py`, `verdict/client/fixture.py`
+  - [ ] `verdict/checks.py`, `verdict/policy.py`, `verdict/audit.py`, `verdict/memo.py`, `verdict/cli.py`
+  - [ ] `pytest` & `ruff` green; `verdict check` verified on all 6 fixtures offline

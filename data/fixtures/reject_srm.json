@@ -1,0 +1,53 @@
+{
+  "experiment": {
+    "id": "reject_srm",
+    "name": "result_view_srm_fault_fixture",
+    "hypothesis": "Seeded SRM fault where traffic split breaks 50/50.",
+    "status": "running",
+    "feature_name": "seeded_fault_demo",
+    "planned_sample": 200,
+    "simulated": true
+  },
+  "exposures": {
+    "as_of": "2026-11-28T12:00:00Z",
+    "planned_weights": {"dashboard": 0.5, "verdict": 0.5},
+    "counts": {"dashboard": 165, "verdict": 55},
+    "excluded_identities": 0
+  },
+  "results": {
+    "as_of": "2026-11-28T12:00:00Z",
+    "srm_p_value": 0.0000000000001,
+    "metrics": [
+      {
+        "name": "shipped_ambiguous",
+        "role": "primary",
+        "expected_direction": "decrease",
+        "control_arm": "dashboard",
+        "variant_arm": "verdict",
+        "control_n": 165,
+        "control_events": 99,
+        "variant_n": 55,
+        "variant_events": 14,
+        "relative_lift": -0.576,
+        "ci_low": -0.740,
+        "ci_high": -0.340,
+        "win_probability": 0.999
+      },
+      {
+        "name": "held_clear_win",
+        "role": "guardrail",
+        "expected_direction": "do_not_increase",
+        "control_arm": "dashboard",
+        "variant_arm": "verdict",
+        "control_n": 165,
+        "control_events": 10,
+        "variant_n": 55,
+        "variant_events": 4,
+        "relative_lift": 0.200,
+        "ci_low": -0.400,
+        "ci_high": 1.100,
+        "win_probability": 0.350
+      }
+    ]
+  }
+}

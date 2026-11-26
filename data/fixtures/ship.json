@@ -1,0 +1,53 @@
+{
+  "experiment": {
+    "id": "ship",
+    "name": "result_view_ship_fixture",
+    "hypothesis": "Verdict memo reduces premature shipping of inconclusive results.",
+    "status": "running",
+    "feature_name": "result_view",
+    "planned_sample": 200,
+    "simulated": true
+  },
+  "exposures": {
+    "as_of": "2026-11-29T03:30:00Z",
+    "planned_weights": {"dashboard": 0.5, "verdict": 0.5},
+    "counts": {"dashboard": 112, "verdict": 108},
+    "excluded_identities": 0
+  },
+  "results": {
+    "as_of": "2026-11-29T03:30:00Z",
+    "srm_p_value": 0.787,
+    "metrics": [
+      {
+        "name": "shipped_ambiguous",
+        "role": "primary",
+        "expected_direction": "decrease",
+        "control_arm": "dashboard",
+        "variant_arm": "verdict",
+        "control_n": 112,
+        "control_events": 67,
+        "variant_n": 108,
+        "variant_events": 34,
+        "relative_lift": -0.474,
+        "ci_low": -0.630,
+        "ci_high": -0.280,
+        "win_probability": 0.998
+      },
+      {
+        "name": "held_clear_win",
+        "role": "guardrail",
+        "expected_direction": "do_not_increase",
+        "control_arm": "dashboard",
+        "variant_arm": "verdict",
+        "control_n": 112,
+        "control_events": 9,
+        "variant_n": 108,
+        "variant_events": 10,
+        "relative_lift": 0.152,
+        "ci_low": -0.350,
+        "ci_high": 0.900,
+        "win_probability": 0.360
+      }
+    ]
+  }
+}

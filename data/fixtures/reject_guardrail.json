@@ -1,0 +1,53 @@
+{
+  "experiment": {
+    "id": "reject_guardrail",
+    "name": "result_view_guardrail_fault_fixture",
+    "hypothesis": "Primary improves, but guardrail held_clear_win regresses sharply.",
+    "status": "running",
+    "feature_name": "result_view",
+    "planned_sample": 200,
+    "simulated": true
+  },
+  "exposures": {
+    "as_of": "2026-11-29T03:30:00Z",
+    "planned_weights": {"dashboard": 0.5, "verdict": 0.5},
+    "counts": {"dashboard": 110, "verdict": 110},
+    "excluded_identities": 0
+  },
+  "results": {
+    "as_of": "2026-11-29T03:30:00Z",
+    "srm_p_value": 1.0,
+    "metrics": [
+      {
+        "name": "shipped_ambiguous",
+        "role": "primary",
+        "expected_direction": "decrease",
+        "control_arm": "dashboard",
+        "variant_arm": "verdict",
+        "control_n": 110,
+        "control_events": 66,
+        "variant_n": 110,
+        "variant_events": 33,
+        "relative_lift": -0.500,
+        "ci_low": -0.660,
+        "ci_high": -0.310,
+        "win_probability": 0.999
+      },
+      {
+        "name": "held_clear_win",
+        "role": "guardrail",
+        "expected_direction": "do_not_increase",
+        "control_arm": "dashboard",
+        "variant_arm": "verdict",
+        "control_n": 110,
+        "control_events": 6,
+        "variant_n": 110,
+        "variant_events": 31,
+        "relative_lift": 4.167,
+        "ci_low": 1.450,
+        "ci_high": 9.800,
+        "win_probability": 0.001
+      }
+    ]
+  }
+}
