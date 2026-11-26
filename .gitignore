@@ -13,6 +13,7 @@ __pycache__/
 data/*.jsonl
 data/*.db*
 data/*.sqlite3*
+data/export/
 !data/fixtures/
 
 # OS / IDE
