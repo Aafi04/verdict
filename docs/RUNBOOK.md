@@ -22,6 +22,23 @@ On `aafi-server.local`:
 
 ---
 
+## Read-Only Status Script (Windows)
+
+Run from the repo root on this Windows PC at any time — no secrets printed, no services touched:
+
+```powershell
+python scripts/status.py
+```
+
+Checks 7 layers in order (SSH → Linux services → local healthz → tunnel URL → public healthz → redirect stub → integrity) and stops at the first FAIL.  Exit 0 = all OK; exit 1 = failed.  On failure a structured block is printed with a ready-to-paste agent prompt.
+
+Override the auto-detected tunnel URL when you already know it:
+```powershell
+python scripts/status.py --tunnel-url https://<hostname>.trycloudflare.com
+```
+
+---
+
 ## Routine Checks (Safe Before Freeze)
 
 ```bash
