@@ -28,8 +28,9 @@ from quiz.config import load_dotenv
 from quiz.db import QuizDatabase
 from verdict.config import EXPERIMENT_STARTED_AT_UTC
 
-# Fixed freeze time from docs/EXPERIMENT.md: Nov 29, 2026, 09:00 IST (+05:30)
-FREEZE_UTC = datetime(2026, 11, 29, 3, 30, 0, tzinfo=UTC)
+# Freeze time moved from pre-registered 2026-11-29T03:30:00Z to actual
+# collection-complete time (2026-11-26T11:21:55Z) — see docs/EXPERIMENT.md Deviations.
+FREEZE_UTC = datetime(2026, 11, 26, 11, 21, 55, tzinfo=UTC)
 
 
 def compute_chi2_srm_p_value(control_n: int, variant_n: int, control_weight: float = 0.5) -> float | None:
