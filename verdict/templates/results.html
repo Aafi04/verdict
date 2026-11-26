@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verdict Results — {{ experiment.name }}</title>
+  <style>
+    :root {
+      --bg: #f6f5f1;
+      --surface: #ffffff;
+      --ink: #17191c;
+      --muted: #5a6069;
+      --border: #dfdcd3;
+      --ship-bg: #14532d;
+      --ship-soft: #dcfce7;
+      --hold-bg: #92400e;
+      --hold-soft: #fef3c7;
+      --reject-bg: #991b1b;
+      --reject-soft: #fee2e2;
+      --warn-bg: #7c2d12;
+      --warn-soft: #ffedd5;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 28px 18px 56px; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    .brand { font-weight: 700; font-size: 1.05rem; }
+    .meta { color: var(--muted); font-size: 0.88rem; font-family: var(--mono); }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 22px; margin-bottom: 18px;
+    }
+    .banner-sim {
+      background: var(--warn-soft); color: var(--warn-bg);
+      border: 1px solid #fdba74; border-radius: 8px;
+      padding: 10px 14px; font-weight: 600; margin-bottom: 18px;
+    }
+    .badge {
+      display: inline-block; padding: 5px 12px; border-radius: 6px;
+      font-family: var(--mono); font-weight: 700; font-size: 0.95rem;
+    }
+    .badge-SHIP { background: var(--ship-soft); color: var(--ship-bg); }
+    .badge-HOLD { background: var(--hold-soft); color: var(--hold-bg); }
+    .badge-REJECT { background: var(--reject-soft); color: var(--reject-bg); }
+    .status-PASS { color: var(--ship-bg); font-weight: 700; }
+    .status-HOLD { color: var(--hold-bg); font-weight: 700; }
+    .status-WARN { color: var(--warn-bg); font-weight: 700; }
+    .status-FAIL { color: var(--reject-bg); font-weight: 700; }
+    h1, h2 { margin-top: 0; letter-spacing: -0.01em; }
+    h1 { font-size: 1.45rem; margin-bottom: 8px; }
+    h2 { font-size: 1.1rem; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    code { font-family: var(--mono); font-size: 0.88em; background: #f1efe7; padding: 1px 5px; border-radius: 4px; }
+    ul { margin: 8px 0 0; padding-left: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
+    .stat { background: #faf9f5; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+    .stat-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; }
+    .stat-val { font-size: 1.15rem; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">Verdict — Experiment Evaluation Report</div>
+      <div class="meta">generated {{ generated_at }}</div>
+    </div>
+
+    {% if experiment.simulated %}
+    <div class="banner-sim">
+      SIMULATED DATA (simulated=true): This report reflects simulated or fixture traffic and must never be mixed with Production results.
+    </div>
+    {% endif %}
+
+    <section class="card">
+      <span class="badge badge-{{ verdict.verdict }}">VERDICT: {{ verdict.verdict }}</span>
+      <h1 style="margin-top: 12px;">{{ experiment.name }}</h1>
+      {% if experiment.hypothesis %}
+      <p><strong>Hypothesis:</strong> {{ experiment.hypothesis }}</p>
+      {% endif %}
+      <p>{{ memo.summary }}</p>
+
+      <div class="grid">
+        <div class="stat">
+          <div class="stat-label">Experiment ID / Feature</div>
+          <div class="stat-val">{{ experiment.id }} / {{ experiment.feature_name }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Exposures / Planned</div>
+          <div class="stat-val">{{ exposure.total }} / {{ experiment.planned_sample }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Verdict Hash</div>
+          <div class="stat-val">{{ verdict.verdict_hash[:12] }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Data As Of</div>
+          <div class="stat-val" style="font-size: 0.9rem;">{{ results.as_of or exposure.as_of or "n/a" }}</div>
+        </div>
+      </div>
+
+      {% if verdict.reasons %}
+      <h2 style="margin-top: 18px;">Reasons</h2>
+      <ul>
+        {% for reason in verdict.reasons %}
+        <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <p style="margin-top: 14px;"><strong>Next action:</strong> <code>{{ verdict.next_action }}</code></p>
+    </section>
+
+    <section class="card">
+      <h2>Exposures &amp; Metrics</h2>
+      <p class="meta">
+        Split:
+        {% for arm, count in exposure.counts.items() %}
+          {{ arm }}={{ count }}{% if not loop.last %}, {% endif %}
+        {% endfor %}
+        {% if results.srm_p_value is not none %} | Flagsmith srm_p_value={{ "%.4g"|format(results.srm_p_value) }}{% endif %}
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Role</th>
+            <th>Control</th>
+            <th>Variant</th>
+            <th>Rel. Lift</th>
+            <th>95% CI</th>
+            <th>Win Prob</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in results.metrics %}
+          <tr>
+            <td><strong>{{ m.name }}</strong><br><span class="meta">{{ m.expected_direction }}</span></td>
+            <td>{{ m.role }}</td>
+            <td>{{ m.control_events }} / {{ m.control_n }} ({{ "%.1f%%"|format((m.control_events / m.control_n * 100) if m.control_n else 0) }})</td>
+            <td>{{ m.variant_events }} / {{ m.variant_n }} ({{ "%.1f%%"|format((m.variant_events / m.variant_n * 100) if m.variant_n else 0) }})</td>
+            <td>{% if m.relative_lift is not none %}{{ "%+.1f%%"|format(m.relative_lift * 100) }}{% else %}pending{% endif %}</td>
+            <td>{% if m.interval is not none %}[{{ "%+.1f%%"|format(m.interval.low * 100) }}, {{ "%+.1f%%"|format(m.interval.high * 100) }}]{% else %}pending{% endif %}</td>
+            <td>{% if m.win_probability is not none %}{{ "%.1f%%"|format(m.win_probability * 100) }}{% else %}pending{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Deterministic Checks</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Status</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for chk in verdict.checks %}
+          <tr>
+            <td><code>{{ chk.name }}</code></td>
+            <td class="status-{{ chk.status }}">{{ chk.status }}</td>
+            <td>{{ chk.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Autonomy Boundary &amp; Audit Trail</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Verdict does automatically</th>
+            <th>Verdict never does without typed human approval</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Read exposures &amp; results, compute SRM &amp; policy verdict deterministically, log looks, render static report.</td>
+            <td>Change flag state, allocation, or promote a variant. Requires <code>verdict apply --execute</code> + exact <code>APPROVE &lt;id&gt; &lt;hash8&gt;</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+      {% if audit_entries %}
+      <h2 style="margin-top: 16px;">Recorded Approvals (<code>audit.jsonl</code>)</h2>
+      <ul>
+        {% for item in audit_entries %}
+        <li><code>{{ item.ts }}</code> — {{ item.approver }} applied <code>{{ item.verdict_hash[:12] }}</code>: {{ item.change.description if item.change else "" }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="meta" style="margin-top: 12px;">No flag mutations recorded for this experiment.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Known Limitations</h2>
+      <ul>
+        <li>Respondents are primarily developers from hackathon/community channels (selection bias).</li>
+        <li>Quiz scenarios are fixed and fictional; real production release judgment may differ.</li>
+        <li>Short collection window can yield wide credible intervals (reported honestly as HOLD if inconclusive).</li>
+        <li>Verdict evaluates its own Track 1 experiment; all policy thresholds and deterministic checks are published in open code.</li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>
