@@ -148,3 +148,37 @@ def test_rate_limit_blocks_excess_requests_without_storing_ip(tmp_path: Path) ->
         assert client.get("/").status_code == 429
         # /healthz remains available
         assert client.get("/healthz").status_code == 200
+
+
+def test_rate_limit_separate_buckets_for_forwarded_ips(tmp_path: Path) -> None:
+    sdk = StubSdk(default_arm="dashboard")
+    settings = _make_settings(tmp_path, rate_limit=2)
+    app = create_app(settings=settings, sdk=sdk)
+
+    with TestClient(app) as client:
+        for _ in range(2):
+            assert client.get("/", headers={"CF-Connecting-IP": "203.0.113.10"}).status_code == 200
+        assert client.get("/", headers={"CF-Connecting-IP": "203.0.113.10"}).status_code == 429
+
+        # Different client IP via CF-Connecting-IP gets its own independent bucket
+        assert client.get("/", headers={"CF-Connecting-IP": "203.0.113.11"}).status_code == 200
+        # Fallback to X-Forwarded-For also uses its own bucket
+        assert client.get("/", headers={"X-Forwarded-For": "198.51.100.7"}).status_code == 200
+
+
+def test_vid_cookie_secure_over_https_proxy(tmp_path: Path) -> None:
+    sdk = StubSdk(default_arm="dashboard")
+    settings = _make_settings(tmp_path)
+    app = create_app(settings=settings, sdk=sdk)
+
+    with TestClient(app) as client:
+        resp = client.get(
+            "/",
+            headers={"X-Forwarded-Proto": "https", "CF-Connecting-IP": "203.0.113.10"},
+        )
+        assert resp.status_code == 200
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "vid=" in set_cookie
+        assert "HttpOnly" in set_cookie
+        assert "SameSite=lax" in set_cookie
+        assert "Secure" in set_cookie

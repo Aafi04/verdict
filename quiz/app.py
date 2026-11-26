@@ -40,15 +40,34 @@ def _load_scenarios(scenarios_dir: Path) -> dict[str, dict[str, Any]]:
     return loaded
 
 
+_TRUSTED_PROXIES = {"127.0.0.1", "::1", "testclient"}
+
+
+def _is_trusted_proxy(request: Request) -> bool:
+    return bool(request.client and request.client.host in _TRUSTED_PROXIES)
+
+
 def _client_ip_for_rate_limit(request: Request) -> str | None:
     """Extract client IP solely for ephemeral salted hashing in RAM (never stored)."""
-    cf_ip = request.headers.get("cf-connecting-ip")
-    if cf_ip:
-        return cf_ip.strip()
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
+    if _is_trusted_proxy(request):
+        cf_ip = request.headers.get("cf-connecting-ip")
+        if cf_ip:
+            return cf_ip.strip()
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+def _is_https_request(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    if _is_trusted_proxy(request):
+        if request.headers.get("x-forwarded-proto", "").strip().lower() == "https":
+            return True
+        if '"https"' in request.headers.get("cf-visitor", "").lower():
+            return True
+    return False
 
 
 def _get_or_issue_vid(
@@ -66,12 +85,13 @@ def _get_or_issue_vid(
     return vid, sign_visitor_id(vid, settings.cookie_secret)
 
 
-def _set_vid_cookie(response: Response, signed_val: str | None) -> None:
+def _set_vid_cookie(request: Request, response: Response, signed_val: str | None) -> None:
     if signed_val is None:
         return
     response.set_cookie(
         key=COOKIE_NAME,
         value=signed_val,
+        secure=_is_https_request(request),
         httponly=True,
         samesite="lax",
         max_age=60 * 60 * 24 * 7,
@@ -141,7 +161,7 @@ def create_app(
             name="landing.html",
             context={"privacy_notice": PRIVACY_NOTICE, "simulated": cfg.simulated_mode},
         )
-        _set_vid_cookie(resp, cookie_to_set)
+        _set_vid_cookie(request, resp, cookie_to_set)
         return resp
 
     @app.get("/s1", response_class=HTMLResponse)
@@ -165,7 +185,7 @@ def create_app(
                 "simulated": cfg.simulated_mode,
             },
         )
-        _set_vid_cookie(resp, cookie_to_set)
+        _set_vid_cookie(request, resp, cookie_to_set)
         return resp
 
     @app.post("/s1")
@@ -178,7 +198,7 @@ def create_app(
         if db.record_choice_once(vid, "s1", typed_choice) and typed_choice == "ship":
             quiz_sdk.track_event("shipped_ambiguous", vid)
         resp = RedirectResponse(url="/s2", status_code=303)
-        _set_vid_cookie(resp, cookie_to_set)
+        _set_vid_cookie(request, resp, cookie_to_set)
         return resp
 
     @app.get("/s2", response_class=HTMLResponse)
