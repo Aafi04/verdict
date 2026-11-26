@@ -7,15 +7,25 @@ import json
 import math
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from verdict.audit import DEFAULT_LOOKS_PATH, append_look, count_prior_looks, read_looks
+from verdict.audit import (
+    DEFAULT_AUDIT_PATH,
+    DEFAULT_LOOKS_PATH,
+    append_audit,
+    append_look,
+    count_prior_looks,
+    read_looks,
+)
 from verdict.checks import run_all_checks
 from verdict.client.base import FlagsmithClient
 from verdict.client.fixture import FixtureClient
 from verdict.client.rest import RestClient
 from verdict.config import VerdictThresholds, resolve_env_config
 from verdict.memo import memo_from_verdict, render_memo_text
+from verdict.models import Experiment, ExperimentResults, Exposure, VerdictResult
 from verdict.policy import evaluate_verdict
 
 
@@ -67,6 +77,29 @@ def _close_if_needed(client: FlagsmithClient) -> None:
         close_fn()
 
 
+def _evaluate_with_client(
+    client: FlagsmithClient,
+    experiment_arg: str,
+    *,
+    looks_path: Path,
+    planned_sample: int,
+) -> tuple[Experiment, Exposure, ExperimentResults, VerdictResult]:
+    experiment = client.get_experiment(experiment_arg)
+    exposure = client.get_exposures(experiment_arg)
+    results = client.get_results(experiment_arg)
+    prior_looks = count_prior_looks(experiment.id, looks_path=looks_path)
+    thresholds = VerdictThresholds(default_planned_sample=planned_sample)
+    checks = run_all_checks(
+        experiment,
+        exposure,
+        results,
+        prior_looks=prior_looks,
+        thresholds=thresholds,
+    )
+    verdict = evaluate_verdict(experiment, exposure, results, checks, thresholds)
+    return experiment, exposure, results, verdict
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     fixtures_dir = Path(args.fixtures_dir)
     looks_path = Path(args.looks_path)
@@ -86,23 +119,15 @@ def _cmd_check(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        experiment = client.get_experiment(args.experiment)
-        exposure = client.get_exposures(args.experiment)
-        results = client.get_results(args.experiment)
+        experiment, exposure, results, verdict = _evaluate_with_client(
+            client,
+            args.experiment,
+            looks_path=looks_path,
+            planned_sample=int(args.planned_sample),
+        )
     finally:
         _close_if_needed(client)
 
-    prior_looks = count_prior_looks(experiment.id, looks_path=looks_path)
-
-    thresholds = VerdictThresholds(default_planned_sample=int(args.planned_sample))
-    checks = run_all_checks(
-        experiment,
-        exposure,
-        results,
-        prior_looks=prior_looks,
-        thresholds=thresholds,
-    )
-    verdict = evaluate_verdict(experiment, exposure, results, checks, thresholds)
     append_look(experiment, exposure, verdict, looks_path=looks_path)
 
     if args.json:
@@ -124,9 +149,11 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
 
 def _cmd_log(args: argparse.Namespace) -> int:
-    entries = read_looks(Path(args.looks_path), limit=args.limit)
+    target = Path(args.audit_path) if args.audit else Path(args.looks_path)
+    entries = read_looks(target, limit=args.limit)
     if not entries:
-        print("No look entries recorded yet.")
+        label = "audit" if args.audit else "look"
+        print(f"No {label} entries recorded yet.")
         return 0
     for entry in entries:
         print(json.dumps(entry))
@@ -144,13 +171,99 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_apply(_args: argparse.Namespace) -> int:
-    print(
-        "verdict apply requires live Flagsmith write wiring (Phase 3 / Gate G3). "
-        "Use `verdict check <fixture> --fixture` for Phase 2.",
-        file=sys.stderr,
-    )
-    return 2
+def _cmd_apply(args: argparse.Namespace) -> int:
+    fixtures_dir = Path(args.fixtures_dir)
+    looks_path = Path(args.looks_path)
+    audit_path = Path(args.audit_path)
+
+    try:
+        client = _build_client(
+            experiment_arg=args.experiment,
+            use_fixture=bool(args.fixture),
+            force_live=bool(args.live),
+            fixtures_dir=fixtures_dir,
+            env_name=args.env,
+            refresh=bool(args.refresh),
+            planned_sample=int(args.planned_sample),
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        experiment, _exposure, _results, verdict = _evaluate_with_client(
+            client,
+            args.experiment,
+            looks_path=looks_path,
+            planned_sample=int(args.planned_sample),
+        )
+        if verdict.verdict != "SHIP" or not verdict.winning_arm:
+            print(
+                f"REFUSED: verdict is {verdict.verdict} (not SHIP); no changes proposed.",
+                file=sys.stderr,
+            )
+            for reason in verdict.reasons:
+                print(f"  - {reason}", file=sys.stderr)
+            return 1
+
+        change = client.propose_rollout(experiment.id, verdict.winning_arm)
+        hash8 = verdict.verdict_hash[:8]
+        expected_phrase = f"APPROVE {experiment.id} {hash8}"
+
+        print(f"VERDICT: SHIP (hash={verdict.verdict_hash[:12]}...)")
+        print(f"Proposed change: {change.description}")
+        print(f"Payload: {json.dumps(change.payload)}")
+
+        if not args.execute or args.dry_run:
+            print("\nDRY-RUN ONLY: no changes written to Flagsmith.")
+            print(f"To execute, re-run with --execute and type: {expected_phrase}")
+            return 0
+
+        if isinstance(client, FixtureClient):
+            print("ERROR: FixtureClient cannot execute live Flagsmith writes.", file=sys.stderr)
+            return 2
+
+        try:
+            typed = input(f"Type '{expected_phrase}' to execute: ").strip()
+        except EOFError:
+            typed = ""
+
+        if typed != expected_phrase:
+            print("ABORTED: approval phrase did not match; no changes written.", file=sys.stderr)
+            return 1
+
+        # Re-check state immediately before writing to detect drift since approval.
+        _, _, _, fresh_verdict = _evaluate_with_client(
+            client,
+            args.experiment,
+            looks_path=looks_path,
+            planned_sample=int(args.planned_sample),
+        )
+        if fresh_verdict.verdict != "SHIP" or fresh_verdict.verdict_hash != verdict.verdict_hash:
+            print(
+                "ABORTED: experiment state changed between check and write "
+                f"(expected {hash8}, got {fresh_verdict.verdict_hash[:8]}).",
+                file=sys.stderr,
+            )
+            return 1
+
+        apply_result: dict[str, Any] = client.apply(change)
+        audit_entry = {
+            "ts": datetime.now(UTC).isoformat(),
+            "id": experiment.id,
+            "experiment_name": experiment.name,
+            "simulated": experiment.simulated,
+            "verdict_hash": verdict.verdict_hash,
+            "change": change.model_dump(),
+            "result": apply_result,
+            "approver": "human-typed",
+        }
+        append_audit(audit_entry, audit_path=audit_path)
+        print(f"APPLIED: {json.dumps(apply_result)}")
+        print(f"Audit entry recorded in {audit_path}.")
+        return 0
+    finally:
+        _close_if_needed(client)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -173,8 +286,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--looks-path", default=str(DEFAULT_LOOKS_PATH))
     p_check.add_argument("--json", action="store_true", help="Print JSON output")
 
-    p_log = sub.add_parser("log", help="Show recent entries from data/looks.jsonl")
+    p_log = sub.add_parser("log", help="Show recent entries from looks.jsonl or audit.jsonl")
     p_log.add_argument("--looks-path", default=str(DEFAULT_LOOKS_PATH))
+    p_log.add_argument("--audit-path", default=str(DEFAULT_AUDIT_PATH))
+    p_log.add_argument("--audit", action="store_true", help="Read audit.jsonl instead of looks.jsonl")
     p_log.add_argument("--limit", type=int, default=20)
 
     p_plan = sub.add_parser("plan", help="Estimate sample size for a two-arm experiment")
@@ -182,9 +297,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_plan.add_argument("--mde", type=float, required=True, help="Absolute effect size in (0, 1)")
     p_plan.add_argument("--daily-visitors", type=int, default=0)
 
-    p_apply = sub.add_parser("apply", help="Propose/apply winning rollout (Phase 3)")
-    p_apply.add_argument("experiment")
-    p_apply.add_argument("--execute", action="store_true")
+    p_apply = sub.add_parser("apply", help="Propose/apply winning rollout (dry-run by default)")
+    p_apply.add_argument("experiment", help="Experiment ID, name, or fixture name")
+    p_apply.add_argument("--fixture", action="store_true", help="Force loading data/fixtures/*.json")
+    p_apply.add_argument("--live", action="store_true", help="Force live Flagsmith REST client")
+    p_apply.add_argument(
+        "--env",
+        choices=("simulation", "development", "production"),
+        default="simulation",
+        help="Target Flagsmith environment when running live (default: simulation)",
+    )
+    p_apply.add_argument("--refresh", action="store_true", help="Trigger Flagsmith exposure/results refresh")
+    p_apply.add_argument("--planned-sample", type=int, default=200)
+    p_apply.add_argument("--fixtures-dir", default="data/fixtures")
+    p_apply.add_argument("--looks-path", default=str(DEFAULT_LOOKS_PATH))
+    p_apply.add_argument("--audit-path", default=str(DEFAULT_AUDIT_PATH))
+    p_apply.add_argument("--dry-run", action="store_true", help="Explicit dry-run (default behavior)")
+    p_apply.add_argument("--execute", action="store_true", help="Execute write after typed human approval")
 
     return parser
 
