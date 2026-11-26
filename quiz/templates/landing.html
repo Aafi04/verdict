@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Ship or Hold? — 2-Question Experiment Quiz{% endblock %}
+{% block header_meta %}<span class="pill">~30 sec</span>{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>Would you ship these experiments?</h1>
+  <p class="lead">
+    Review <strong>2 short A/B experiment scenarios</strong> and decide for each one:
+    <strong>Ship variant</strong> or <strong>Hold / keep testing</strong>. You will see the
+    answers and explanations right after Question 2.
+  </p>
+
+  <div class="notice">
+    {{ privacy_notice }}
+  </div>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="/s1">Start Quiz &rarr;</a>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Question {{ step }} of {{ total_steps }} — {{ scenario.title }}{% endblock %}
+{% block header_meta %}<span class="pill">Question {{ step }} / {{ total_steps }}</span>{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>{{ scenario.title }}</h1>
+  <p class="lead">{{ scenario.question }}</p>
+
+  {% if arm == "dashboard" %}
+  <div class="metrics-grid">
+    <div class="stat">
+      <div class="stat-label">Chance to Beat Control</div>
+      <div class="stat-value">{{ scenario.win_probability }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Relative Lift</div>
+      <div class="stat-value">{{ scenario.lift }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">95% Credible Interval</div>
+      <div class="stat-value" style="font-size: 1.05rem;">{{ scenario.credible_interval }}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Metric / Check</th>
+        <th>Control</th>
+        <th>Variant</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ scenario.primary_metric }}</td>
+        <td>{{ scenario.control_rate }}</td>
+        <td>{{ scenario.variant_rate }}</td>
+        <td>{{ scenario.lift }} (95% CI: {{ scenario.credible_interval }})</td>
+      </tr>
+      <tr>
+        <td>Exposures</td>
+        <td>{{ scenario.exposures_control }}</td>
+        <td>{{ scenario.exposures_variant }}</td>
+        <td>Planned total: {{ scenario.planned_sample }} (SRM p = {{ "%.2f"|format(scenario.srm_p_value) }})</td>
+      </tr>
+      <tr>
+        <td>Guardrail: {{ scenario.guardrail_metric }}</td>
+        <td colspan="2">Delta: {{ scenario.guardrail_delta }}</td>
+        <td>No regression flagged</td>
+      </tr>
+    </tbody>
+  </table>
+
+  {% else %}
+  <div class="memo-header">
+    <span class="badge badge-{{ memo.verdict }}">VERDICT: {{ memo.verdict }}</span>
+    <strong>{{ memo.summary }}</strong>
+  </div>
+
+  <div class="metrics-grid">
+    <div class="stat">
+      <div class="stat-label">Primary Lift</div>
+      <div class="stat-value">{{ memo.lift }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">95% Interval</div>
+      <div class="stat-value" style="font-size: 1.05rem;">{{ memo.interval }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Win Probability</div>
+      <div class="stat-value">{{ memo.win_probability }}</div>
+    </div>
+  </div>
+
+  <p><strong>Sample:</strong> {{ memo.sample_status }}<br>
+  <strong>Guardrail:</strong> {{ memo.guardrail_status }}</p>
+
+  {% if memo.reasons %}
+  <p><strong>Key reasons:</strong></p>
+  <ul class="reasons">
+    {% for reason in memo.reasons %}
+    <li>{{ reason }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Check</th>
+        <th>Status</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for chk in memo.checks %}
+      <tr>
+        <td><code>{{ chk.name }}</code></td>
+        <td><span class="status-pill status-{{ chk.status }}">{{ chk.status }}</span></td>
+        <td>{{ chk.detail }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p><strong>Recommended next step:</strong> {{ memo.next_action }}</p>
+  {% endif %}
+
+  {% if already_answered %}
+  <div class="notice">
+    Your decision for this scenario (<strong>{{ already_answered|upper }}</strong>) is already recorded. Submitting again keeps your original decision.
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ action_url }}">
+    <div class="actions">
+      <button type="submit" name="choice" value="ship" class="btn-ship">Ship variant</button>
+      <button type="submit" name="choice" value="hold" class="btn-hold">Hold / keep testing</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

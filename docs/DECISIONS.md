@@ -1,0 +1,7 @@
+# DECISIONS
+
+(Append: date | choice | reason | alternative considered)
+
+- **2026-11-25 | Single root `pyproject.toml` and `.venv` (`pip install -e ".[quiz]"`)** | `quiz/` imports `verdict.memo` directly, so a unified root package avoids cross-venv import hacks and matches standard Python packaging. | Alternative: separate `quiz/.venv` and `verdict/` editable install (rejected by user amendment 1).
+- **2026-11-25 | Use Flagsmith PostgreSQL database warehouse (`EXPERIMENTATION_ENABLED='true'`, `USE_POSTGRES_FOR_ANALYTICS='true'`) without ClickHouse** | Official Flagsmith experimentation self-hosting docs support storing experiment events directly in PostgreSQL for evaluation/low-volume runs with zero extra services. Host machine has 15.63 GB total RAM (~2.86 GB free before Docker), making a full ClickHouse + Kafka + ingestion stack unnecessarily heavy for ~200 quiz completions. | Alternative: deploy ClickHouse + Kafka + event ingestion + warehouse delivery containers (deferred unless Postgres warehouse fails Gate G1).
+- **2026-11-25 | Include official `flagsmith/flagsmith-mcp:latest` in `docker/docker-compose.yml` on port `8002`** | Official Flagsmith MCP docs publish `flagsmith/flagsmith-mcp:latest` with experiment/metric/feature tools and Streamable HTTP on `/mcp` (container port 8000, mapped to host `8002` since `flagsmith` uses `8000` and `flagsmith-task-processor` uses `8001`). | Alternative: `uvx` stdio subprocess or REST-only `RestClient` (REST remains first fallback if MCP experiment tools fail on OSS).

@@ -1,0 +1,58 @@
+# Verdict
+
+> An agent that reads a Flagsmith experiment, decides SHIP / HOLD / REJECT, and only changes a flag after a human approves.
+> Built for **Toggle Wars (WeMakeDevs x Flagsmith), Nov 26-29, 2026** - submitted to **Track 1 (Test Something Real)** and **Track 2 (AI Agents & Feature Flags)**.
+
+## The one-paragraph pitch
+Experiment dashboards show "86% chance to win" next to an interval that crosses zero, and people ship the noise. Verdict is the second pair of eyes: it reads Flagsmith experiment results (including Flagsmith's `srm_p_value`, which Verdict cross-checks with its own chi-square test), applies a deterministic decision policy across credible interval, planned sample/power, and guardrail regression, logs every peeking look, and refuses to mutate any flag without typed human approval. The Track 1 experiment asks a real question about this exact problem: **does a verdict memo, compared with a standard win-probability view, make people less likely to ship an inconclusive result?** Verdict then judges that very experiment.
+
+> **Note on guardrail metric (`held_clear_win`)**: Flagsmith experiments attach one primary metric (`shipped_ambiguous`). The quiz still emits `held_clear_win` events to Flagsmith, and Verdict reads the `held_clear_win` guardrail from the quiz's local SQLite log rather than from Flagsmith's experiment results payload.
+
+## Two submissions, one repo
+| | Track 1 | Track 2 |
+|---|---|---|
+| What judges see | A live "ship or hold?" quiz running a real Flagsmith A/B test | The Verdict agent reading experiments via MCP/API and gating rollouts |
+| Core evidence | Real event data, hypothesis, primary metric, guardrail, honest reading | Autonomy table, human approval, audit log, clear memo |
+| Directories | `quiz/` + `docs/EXPERIMENT.md` | `verdict/` |
+
+Before submitting, confirm in the hackathon Discord / rules that one project may be entered in two tracks (the owner reports this was confirmed). Use ONE account and ONE repo unless organizers say otherwise.
+
+## Repo layout
+```
+verdict/            Python package + CLI (Track 2)
+quiz/               FastAPI app, the Track 1 experiment surface
+scenarios/          Fixed scenario data (JSON)
+docker/             Flagsmith self-hosted compose
+data/               looks.jsonl, audit.jsonl, fixtures (git-ignored except fixtures)
+docs/               PRD, ARCHITECTURE, EXPERIMENT, DEMO, FLAGSMITH_NOTES
+AGENTS.md           Read first (instructions for the coding agent)
+```
+
+## Quickstart (target state)
+```bash
+# 1. Python environment (single root venv)
+python -m venv .venv
+# Linux/macOS: . .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+pip install -e ".[quiz]"
+
+# 2. Flagsmith (self-hosted, free)
+cd docker && docker compose up -d        # dashboard on http://localhost:8000, MCP on http://localhost:8002
+
+# 3. Quiz (Track 1)
+uvicorn quiz.app:app --port 3000
+
+# 4. Verdict (Track 2)
+verdict check result_view_experiment      # read-only, prints memo
+verdict apply result_view_experiment      # dry-run by default, needs typed approval
+```
+
+## Cost
+$0 by design: Flagsmith OSS self-hosted, Python, SQLite/JSONL, free tunnel for public access. No paid APIs. LLM use is optional and only for wording the memo; a template fallback must always work.
+
+## Status
+See `docs/PHASES.md`. Facts not yet verified against a live Flagsmith are in `docs/FLAGSMITH_NOTES.md` - do not assume them.
+
+## Build timeline
+- **Nov 25, 2026 (pre-event prep)**: Self-hosted Flagsmith + MCP environment setup, connectivity/SDK probe (`scripts/g1_check.py`), and an initial Track 1 quiz prototype (`quiz/`, `scenarios/`, `verdict/memo.py`) verified against an isolated `Simulation` environment.
+- **Nov 26-29, 2026 (hackathon window)**: Verdict checks, deterministic policy, MCP/REST clients, typed approval flow, public experiment launch and data collection, final results, and demo.

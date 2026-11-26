@@ -1,0 +1,40 @@
+{
+  "id": "s2",
+  "title": "Scenario 2: Shorter Onboarding Checklist",
+  "question": "Your team tested cutting onboarding from 5 steps to 3 steps. Should you ship the new variant now?",
+  "experiment_name": "onboarding_3_step_flow",
+  "primary_metric": "First-week activation rate",
+  "control_rate": "38.0%",
+  "variant_rate": "45.0%",
+  "lift": "+18.4%",
+  "win_probability": "99%",
+  "credible_interval": "+9.1% to +27.7%",
+  "interval_crosses_zero": false,
+  "exposures_control": 420,
+  "exposures_variant": 420,
+  "planned_sample": 800,
+  "srm_p_value": 1.0,
+  "guardrail_metric": "Day-7 support ticket rate",
+  "guardrail_delta": "-0.4% (95% CI: -1.8% to +1.0%)",
+  "guardrail_regressed": false,
+  "correct_decision": "ship",
+  "explanation": "Correct answer: SHIP. The 95% credible interval (+9.1% to +27.7%) is strictly positive, the planned sample (840 >= 800) is reached, the 50/50 split is balanced, and the support-ticket guardrail did not regress.",
+  "memo": {
+    "verdict": "SHIP",
+    "summary": "Safe to roll out: credible interval is strictly positive, planned sample reached, and integrity/guardrail checks pass.",
+    "reasons": [
+      "95% credible interval (+9.1% to +27.7%) is entirely above zero.",
+      "Planned sample reached: 840 / 800 exposures (420 per arm).",
+      "No guardrail regression on Day-7 support ticket rate."
+    ],
+    "next_action": "Propose rollout of the 3-step variant (requires human approval).",
+    "checks": [
+      {"name": "srm", "status": "PASS", "detail": "Split 420 / 420 matches 50/50 allocation (p = 1.00)."},
+      {"name": "arms_present", "status": "PASS", "detail": "Both arms >= 30 minimum exposures (420 each)."},
+      {"name": "sample_reached", "status": "PASS", "detail": "840 / 800 planned exposures collected (105%)."},
+      {"name": "interval_zero", "status": "PASS", "detail": "95% credible interval [+9.1%, +27.7%] excludes zero."},
+      {"name": "prob_vs_interval", "status": "PASS", "detail": "Win probability 99% aligns with strictly positive interval."},
+      {"name": "guardrail", "status": "PASS", "detail": "Day-7 support ticket rate stable (-0.4%, CI [-1.8%, +1.0%])."}
+    ]
+  }
+}

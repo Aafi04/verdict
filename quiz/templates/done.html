@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Thank you — Verdict Quiz{% endblock %}
+{% block header_meta %}<span class="pill">Completed</span>{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>Thank you for participating</h1>
+  <p class="lead">
+    You saw the <strong>{{ visitor.arm }}</strong> presentation. Here is how your choices compare with the statistical reading:
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Scenario</th>
+        <th>Your choice</th>
+        <th>Recommended</th>
+        <th>Why</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1. {{ s1.title }}</strong></td>
+        <td><code>{{ visitor.s1_choice|upper }}</code></td>
+        <td><span class="status-pill status-HOLD">{{ s1.correct_decision|upper }}</span></td>
+        <td>{{ s1.explanation }}</td>
+      </tr>
+      <tr>
+        <td><strong>2. {{ s2.title }}</strong></td>
+        <td><code>{{ visitor.s2_choice|upper }}</code></td>
+        <td><span class="status-pill status-PASS">{{ s2.correct_decision|upper }}</span></td>
+        <td>{{ s2.explanation }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="lead" style="margin-top: 16px;">
+    Want to review Scenario 1 or 2 again? Your original answers remain locked and will not be double-counted.
+  </p>
+  <div class="actions">
+    <a class="btn btn-hold" href="/">Back to start</a>
+  </div>
+</section>
+{% endblock %}

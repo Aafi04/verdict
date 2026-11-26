@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ship or Hold? — Verdict Quiz{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">Verdict &middot; Ship or Hold?</div>
+      <div>
+        {% if simulated %}
+        <span class="pill pill-sim">SIMULATED=TRUE</span>
+        {% endif %}
+        {% block header_meta %}{% endblock %}
+      </div>
+    </header>
+
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+      {{ privacy_notice }}
+    </footer>
+  </div>
+</body>
+</html>

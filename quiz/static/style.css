@@ -1,0 +1,252 @@
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --ink: #17191c;
+  --muted: #5a6069;
+  --border: #dfdcd3;
+  --accent: #1d4ed8;
+  --accent-ink: #ffffff;
+  --ship-bg: #14532d;
+  --ship-soft: #dcfce7;
+  --hold-bg: #92400e;
+  --hold-soft: #fef3c7;
+  --warn-bg: #7c2d12;
+  --warn-soft: #ffedd5;
+  --pass-bg: #166534;
+  --pass-soft: #dcfce7;
+  --fail-bg: #991b1b;
+  --fail-soft: #fee2e2;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.55;
+}
+
+.wrap {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 28px 18px 48px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--mono);
+  background: #e9e6dc;
+  color: var(--ink);
+}
+
+.pill-sim {
+  background: var(--warn-soft);
+  color: var(--warn-bg);
+  border: 1px solid #fdba74;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  margin-bottom: 18px;
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 1.55rem;
+  line-height: 1.25;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+}
+
+p.lead {
+  color: var(--muted);
+  margin: 0 0 18px;
+}
+
+.notice {
+  background: #efede6;
+  border-left: 3px solid var(--ink);
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  color: var(--ink);
+  border-radius: 4px;
+  margin: 16px 0;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.stat {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fbfaf7;
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 2px;
+  font-family: var(--mono);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 0.92rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.memo-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.badge-SHIP, .status-PASS {
+  background: var(--pass-soft);
+  color: var(--pass-bg);
+}
+
+.badge-HOLD, .status-HOLD {
+  background: var(--hold-soft);
+  color: var(--hold-bg);
+}
+
+.badge-REJECT, .status-FAIL {
+  background: var(--fail-soft);
+  color: var(--fail-bg);
+}
+
+.status-WARN {
+  background: var(--warn-soft);
+  color: var(--warn-bg);
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+button, a.btn {
+  display: inline-block;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 11px 18px;
+  font-size: 0.98rem;
+  font-weight: 600;
+  text-decoration: none;
+  font-family: inherit;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-ship {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.btn-hold {
+  background: #ffffff;
+  color: var(--ink);
+  border-color: #b7b3a8;
+}
+
+.btn-hold:hover {
+  background: #f1efe9;
+}
+
+.btn-ship:hover, .btn-primary:hover {
+  opacity: 0.92;
+}
+
+.footer {
+  margin-top: 22px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+ul.reasons {
+  margin: 8px 0 14px;
+  padding-left: 20px;
+}

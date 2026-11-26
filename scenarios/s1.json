@@ -1,0 +1,40 @@
+{
+  "id": "s1",
+  "title": "Scenario 1: Simplified Checkout CTA",
+  "question": "Your team tested a new checkout CTA copy against the current control. Should you ship the new variant now?",
+  "experiment_name": "checkout_cta_copy_v2",
+  "primary_metric": "Checkout completion rate",
+  "control_rate": "14.3%",
+  "variant_rate": "15.9%",
+  "lift": "+11.2%",
+  "win_probability": "86%",
+  "credible_interval": "-9.8% to +34.1%",
+  "interval_crosses_zero": true,
+  "exposures_control": 140,
+  "exposures_variant": 140,
+  "planned_sample": 800,
+  "srm_p_value": 1.0,
+  "guardrail_metric": "Checkout error rate",
+  "guardrail_delta": "+0.2% (95% CI: -1.1% to +1.5%)",
+  "guardrail_regressed": false,
+  "correct_decision": "hold",
+  "explanation": "Correct answer: HOLD. Although the headline win probability is 86%, the 95% credible interval (-9.8% to +34.1%) crosses zero and only 280 of the planned 800 exposures (35%) have been collected. Shipping now risks deploying a ~10% regression.",
+  "memo": {
+    "verdict": "HOLD",
+    "summary": "Do not ship yet: credible interval crosses zero and planned sample is only 35% reached.",
+    "reasons": [
+      "95% credible interval (-9.8% to +34.1%) includes negative and zero effect.",
+      "Misleading headline: 86% win probability masks wide uncertainty.",
+      "Planned sample not reached: 280 / 800 total exposures (520 more needed)."
+    ],
+    "next_action": "Keep running until 800 total exposures (400 per arm) before re-checking.",
+    "checks": [
+      {"name": "srm", "status": "PASS", "detail": "Split 140 / 140 matches 50/50 allocation (p = 1.00)."},
+      {"name": "arms_present", "status": "PASS", "detail": "Both arms >= 30 minimum exposures (140 each)."},
+      {"name": "sample_reached", "status": "HOLD", "detail": "280 / 800 planned exposures collected (35%)."},
+      {"name": "interval_zero", "status": "HOLD", "detail": "95% credible interval [-9.8%, +34.1%] crosses zero."},
+      {"name": "prob_vs_interval", "status": "WARN", "detail": "Win probability 86% > 80% while interval includes zero (misleading headline)."},
+      {"name": "guardrail", "status": "PASS", "detail": "Checkout error rate stable (+0.2%, CI [-1.1%, +1.5%])."}
+    ]
+  }
+}
