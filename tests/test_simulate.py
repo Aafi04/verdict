@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from quiz.app import create_app
@@ -54,6 +55,8 @@ def test_dry_run_identical_output_for_same_seed_and_no_http(
     assert out1 == out2
     parsed = json.loads(out1)
     assert parsed["dry_run"] is True
+    assert "DRY-RUN" in parsed["label"]
+    assert parsed["simulated"] is True
     assert parsed["count"] == 195  # max(0, 200 - 5 real exposures), ignores 10 synthetic
     assert len(parsed["visitors"]) == 195
 
@@ -97,3 +100,59 @@ def test_simulation_runs_through_production_quiz_with_token_and_dropout(tmp_path
     db = QuizDatabase(settings.db_path)
     assert db.summarize(cohort="synthetic")["totals"]["exposures"] == 25
     assert db.summarize(cohort="real")["totals"]["exposures"] == 0
+
+
+def test_simulation_batch_size_runs_integrity_checks_and_stops_on_mismatch(tmp_path: Path) -> None:
+    sdk = StubSdk(default_arm="verdict")
+    settings = QuizSettings(
+        flagsmith_url="http://127.0.0.1:8000",
+        flagsmith_env_key="prod-key",
+        cookie_secret="unit-test-cookie-secret",
+        db_path=tmp_path / "quiz.db",
+        scenarios_dir=DEFAULT_SCENARIOS_DIR,
+        simulated_mode=False,
+        rate_limit_per_min=2,
+        synthetic_token="synth-token-xyz",
+    )
+    app = create_app(settings=settings, sdk=sdk)
+
+    seen_batches: list[int] = []
+
+    def ok_checker(sent: int) -> dict:
+        seen_batches.append(sent)
+        return {"integrity_status": "OK", "count_diff": {"total": 0}}
+
+    summary = run_simulation(
+        "http://testserver",
+        count=12,
+        seed=20261126,
+        synthetic_token="synth-token-xyz",
+        batch_size=5,
+        batch_settle_seconds=0.0,
+        batch_checker=ok_checker,
+        client_factory=lambda **kw: TestClient(app, headers=kw.get("headers", {})),
+    )
+    assert seen_batches == [5, 10, 12]
+    assert len(summary["batch_checks"]) == 3
+
+    # Also verify _run_health_cmd stops immediately if count_diff != 0 or integrity != OK.
+    import sys
+
+    bad_cmd = (
+        f'"{sys.executable}" -c '
+        '"import json; print(json.dumps({\'integrity_status\': \'WARN_COUNT_DIFF\', \'count_diff\': {\'total\': 1}}))"'
+    )
+    with pytest.raises(RuntimeError, match="Batch integrity check failed"):
+        run_simulation(
+            "http://testserver",
+            count=10,
+            seed=20261126,
+            synthetic_token="synth-token-xyz",
+            batch_size=5,
+            batch_settle_seconds=0.0,
+            health_cmd=bad_cmd,
+            client_factory=lambda **kw: TestClient(app, headers=kw.get("headers", {})),
+        )
+    # Stopped after the very first batch of 5 (did not continue to 10)
+    db = QuizDatabase(settings.db_path)
+    assert db.summarize(cohort="synthetic")["totals"]["exposures"] == 12 + 5

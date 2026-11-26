@@ -22,6 +22,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from verdict.config import EXPERIMENT_STARTED_AT_UTC
+
 # Registered freeze time from docs/EXPERIMENT.md: Nov 29, 2026, 09:00 IST (+05:30)
 FREEZE_UTC = datetime(2026, 11, 29, 3, 30, 0, tzinfo=UTC)
 
@@ -50,6 +52,7 @@ def export_csvs(
     looks_path: Path,
     out_dir: Path,
     mode: str = "production",
+    since: str | None = EXPERIMENT_STARTED_AT_UTC,
     now: datetime | None = None,
     allow_pre_freeze: bool = False,
 ) -> dict[str, Path]:
@@ -72,12 +75,16 @@ def export_csvs(
             cols = {r[1] for r in conn.execute("PRAGMA table_info(visitors)").fetchall()}
             has_synthetic = "synthetic" in cols
             syn_expr = "synthetic" if has_synthetic else "simulated"
-            where = ""
-            params: tuple[Any, ...] = ()
+            clauses: list[str] = []
+            params: list[Any] = []
             if mode == "production":
-                where = f"WHERE {syn_expr} = 0 AND simulated = 0"
+                clauses.append(f"{syn_expr} = 0 AND simulated = 0")
             elif mode == "simulation":
-                where = f"WHERE {syn_expr} = 1 OR simulated = 1"
+                clauses.append(f"({syn_expr} = 1 OR simulated = 1)")
+            if since:
+                clauses.append("datetime(exposed_at) >= datetime(?)")
+                params.append(since)
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
             rows = conn.execute(
                 f"""
                 SELECT
@@ -93,7 +100,7 @@ def export_csvs(
                 {where}
                 ORDER BY exposed_at ASC
                 """,
-                params,
+                tuple(params),
             ).fetchall()
         finally:
             conn.close()

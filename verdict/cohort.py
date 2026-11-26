@@ -10,7 +10,7 @@ from typing import Literal
 
 from quiz.db import QuizDatabase
 from verdict.checks import run_all_checks
-from verdict.config import VerdictThresholds
+from verdict.config import EXPERIMENT_STARTED_AT_UTC, VerdictThresholds
 from verdict.models import (
     CheckResult,
     Experiment,
@@ -83,6 +83,7 @@ def evaluate_sqlite_cohort(
     db_path: Path,
     *,
     cohort: Literal["real", "combined", "synthetic"] = "real",
+    since: str | None = None,
     prior_looks: int = 0,
     thresholds: VerdictThresholds | None = None,
 ) -> tuple[Exposure, ExperimentResults, VerdictResult]:
@@ -101,7 +102,7 @@ def evaluate_sqlite_cohort(
             "by_arm": {},
         }
     else:
-        summary = QuizDatabase(db_path).summarize(cohort=cohort)
+        summary = QuizDatabase(db_path).summarize(cohort=cohort, since=since)
 
     by_arm = summary["by_arm"]
     ctrl = by_arm.get("dashboard", {"exposures": 0, "shipped_ambiguous": 0, "held_clear_win": 0})
@@ -213,10 +214,11 @@ def build_cohort_comparison(
 ) -> CohortComparison:
     """Compute combined N, real N, synthetic N, and compare combined vs real-only verdicts."""
     cfg = thresholds or VerdictThresholds(default_planned_sample=experiment.planned_sample)
+    since = EXPERIMENT_STARTED_AT_UTC if str(experiment.id) == "2" else None
     if db_path is not None and db_path.exists():
         db = QuizDatabase(db_path)
-        real_total = int(db.summarize(cohort="real")["totals"]["exposures"])
-        syn_total = int(db.summarize(cohort="synthetic")["totals"]["exposures"])
+        real_total = int(db.summarize(cohort="real", since=since)["totals"]["exposures"])
+        syn_total = int(db.summarize(cohort="synthetic", since=since)["totals"]["exposures"])
         combined_n = max(combined_exposure.total, real_total + syn_total)
         # If Flagsmith combined total includes synthetic/real not yet synced or fixtures are evaluated:
         if combined_n > real_total + syn_total and experiment.simulated:
@@ -233,6 +235,7 @@ def build_cohort_comparison(
             experiment,
             db_path,
             cohort="real",
+            since=since,
             prior_looks=prior_looks,
             thresholds=cfg,
         )

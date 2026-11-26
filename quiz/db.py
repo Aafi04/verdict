@@ -130,12 +130,15 @@ class QuizDatabase:
             )
             return cur.rowcount == 1
 
-    def count_real_exposures(self) -> int:
+    def count_real_exposures(self, *, since: str | None = None) -> int:
         """Return count of non-synthetic (`synthetic=0 AND simulated=0`) exposures."""
+        sql = "SELECT COUNT(*) FROM visitors WHERE synthetic = 0 AND simulated = 0"
+        params: tuple[Any, ...] = ()
+        if since:
+            sql += " AND datetime(exposed_at) >= datetime(?)"
+            params = (since,)
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM visitors WHERE synthetic = 0 AND simulated = 0"
-            ).fetchone()
+            row = conn.execute(sql, params).fetchone()
             return int(row[0]) if row else 0
 
     def summarize(
@@ -143,14 +146,19 @@ class QuizDatabase:
         *,
         simulated: bool | None = None,
         cohort: Cohort | None = None,
+        since: str | None = None,
     ) -> dict[str, Any]:
         """Aggregate exposure, completion, and metric counts."""
-        where = ""
-        params: tuple[Any, ...] = ()
+        clauses: list[str] = []
+        params: list[Any] = []
         if cohort == "real" or simulated is False:
-            where = "WHERE synthetic = 0 AND simulated = 0"
+            clauses.append("synthetic = 0 AND simulated = 0")
         elif cohort == "synthetic" or simulated is True:
-            where = "WHERE synthetic = 1 OR simulated = 1"
+            clauses.append("(synthetic = 1 OR simulated = 1)")
+        if since:
+            clauses.append("datetime(exposed_at) >= datetime(?)")
+            params.append(since)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
         with self._connect() as conn:
             rows = conn.execute(
@@ -165,7 +173,7 @@ class QuizDatabase:
                 {where}
                 GROUP BY arm
                 """,
-                params,
+                tuple(params),
             ).fetchall()
 
         by_arm: dict[str, dict[str, int]] = {}

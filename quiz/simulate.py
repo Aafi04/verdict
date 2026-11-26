@@ -27,6 +27,7 @@ import json
 import os
 import random
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,7 @@ import httpx
 
 from quiz.config import load_dotenv
 from quiz.db import QuizDatabase
+from verdict.config import EXPERIMENT_STARTED_AT_UTC
 
 SIM_SEED_DEFAULT = 20261126
 PLANNED_TOTAL_TARGET = 200
@@ -53,12 +55,17 @@ def _detect_arm(html: str) -> str:
     return "unknown"
 
 
-def default_synthetic_count(db_path: Path, target_total: int = PLANNED_TOTAL_TARGET) -> int:
+def default_synthetic_count(
+    db_path: Path,
+    target_total: int = PLANNED_TOTAL_TARGET,
+    *,
+    since: str | None = EXPERIMENT_STARTED_AT_UTC,
+) -> int:
     """Compute `max(0, 200 - real_exposures)` from SQLite (`synthetic=0`)."""
     if not db_path.exists():
         return max(0, target_total)
     db = QuizDatabase(db_path)
-    return max(0, target_total - db.count_real_exposures())
+    return max(0, target_total - db.count_real_exposures(since=since))
 
 
 def build_dry_run_plan(count: int, seed: int) -> dict[str, Any]:
@@ -98,7 +105,9 @@ def build_dry_run_plan(count: int, seed: int) -> dict[str, Any]:
         )
 
     return {
+        "label": "DRY-RUN (SIMULATED PLAN - NO HTTP CALLS)",
         "dry_run": True,
+        "simulated": True,
         "seed": seed,
         "count": count,
         "model": {
@@ -118,6 +127,23 @@ def build_dry_run_plan(count: int, seed: int) -> dict[str, Any]:
     }
 
 
+def _run_health_cmd(health_cmd: str) -> dict[str, Any]:
+    proc = subprocess.run(health_cmd, shell=True, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Health check command failed (exit {proc.returncode}): {proc.stderr.strip()}"
+        )
+    report = json.loads(proc.stdout)
+    status = report.get("integrity_status")
+    diff_total = (report.get("count_diff") or {}).get("total")
+    if status != "OK" or diff_total != 0:
+        raise RuntimeError(
+            f"Batch integrity check failed: integrity_status={status!r}, "
+            f"count_diff.total={diff_total!r}"
+        )
+    return report
+
+
 def run_simulation(
     base_url: str,
     count: int,
@@ -125,6 +151,10 @@ def run_simulation(
     *,
     synthetic_token: str = "",
     delay_ms: int = 0,
+    batch_size: int = 0,
+    batch_settle_seconds: float = 2.0,
+    health_cmd: str = "",
+    batch_checker: Any = None,
     test_refresh_idx: int = 0,
     client_factory: Any = None,
 ) -> dict[str, Any]:
@@ -143,6 +173,7 @@ def run_simulation(
         "s1_ship": {"dashboard": 0, "verdict": 0},
         "s2_hold": {"dashboard": 0, "verdict": 0},
         "completions": {"dashboard": 0, "verdict": 0},
+        "batch_checks": [],
         "refresh_checked": False,
         "double_submit_checked": False,
     }
@@ -199,30 +230,46 @@ def run_simulation(
                 summary["double_submit_checked"] = True
 
             # Deterministic post-exposure drop-off (0.88 completion rate equally in both arms).
-            if u_comp >= P_COMPLETE_POST_EXPOSURE:
-                continue
+            if u_comp < P_COMPLETE_POST_EXPOSURE:
+                r2 = c.get("/s2")
+                r2.raise_for_status()
+                p_hold_s2 = P_HOLD_S2_DASHBOARD if arm == "dashboard" else P_HOLD_S2_VERDICT
+                s2_choice = "hold" if u_s2 < p_hold_s2 else "ship"
+                if s2_choice == "hold" and arm in summary["s2_hold"]:
+                    summary["s2_hold"][arm] += 1
 
-            r2 = c.get("/s2")
-            r2.raise_for_status()
-            p_hold_s2 = P_HOLD_S2_DASHBOARD if arm == "dashboard" else P_HOLD_S2_VERDICT
-            s2_choice = "hold" if u_s2 < p_hold_s2 else "ship"
-            if s2_choice == "hold" and arm in summary["s2_hold"]:
-                summary["s2_hold"][arm] += 1
+                p2 = c.post("/s2", data={"choice": s2_choice}, follow_redirects=False)
+                assert p2.status_code == 303 and p2.headers["location"] == "/done"
 
-            p2 = c.post("/s2", data={"choice": s2_choice}, follow_redirects=False)
-            assert p2.status_code == 303 and p2.headers["location"] == "/done"
+                rdone = c.get("/done")
+                rdone.raise_for_status()
+                if arm in summary["completions"]:
+                    summary["completions"][arm] += 1
 
-            rdone = c.get("/done")
-            rdone.raise_for_status()
-            if arm in summary["completions"]:
-                summary["completions"][arm] += 1
-
-            if i == test_refresh_idx:
-                m = re.search(r"<code>(SHIP|HOLD)</code>", rdone.text)
-                assert m and m.group(1).lower() == s1_choice
+                if i == test_refresh_idx:
+                    m = re.search(r"<code>(SHIP|HOLD)</code>", rdone.text)
+                    assert m and m.group(1).lower() == s1_choice
 
         if delay_ms > 0:
             time.sleep(delay_ms / 1000.0)
+
+        sent_so_far = i + 1
+        is_batch_end = batch_size > 0 and (sent_so_far % batch_size == 0 or sent_so_far == count)
+        if is_batch_end and (health_cmd or batch_checker is not None):
+            if batch_settle_seconds > 0:
+                time.sleep(batch_settle_seconds)
+            report = (
+                batch_checker(sent_so_far)
+                if batch_checker is not None
+                else _run_health_cmd(health_cmd)
+            )
+            summary["batch_checks"].append(
+                {
+                    "sent": sent_so_far,
+                    "integrity_status": report.get("integrity_status"),
+                    "count_diff_total": (report.get("count_diff") or {}).get("total"),
+                }
+            )
 
     return summary
 
@@ -239,7 +286,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Number of synthetic visitors (default: max(0, 200 - real exposures in SQLite))",
     )
     parser.add_argument("--seed", type=int, default=SIM_SEED_DEFAULT)
+    parser.add_argument("--since", default=EXPERIMENT_STARTED_AT_UTC)
     parser.add_argument("--delay-ms", type=int, default=0)
+    parser.add_argument("--batch-size", type=int, default=0, help="Run integrity check every N visits")
+    parser.add_argument("--batch-settle-seconds", type=float, default=2.0)
+    parser.add_argument("--health-cmd", default="", help="Integrity command returning JSON")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -250,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
     count = (
         max(0, int(args.count))
         if args.count is not None
-        else default_synthetic_count(Path(args.db_path))
+        else default_synthetic_count(Path(args.db_path), since=args.since or None)
     )
 
     if args.dry_run:
@@ -264,6 +315,9 @@ def main(argv: list[str] | None = None) -> int:
         args.seed,
         synthetic_token=token,
         delay_ms=max(0, int(args.delay_ms)),
+        batch_size=max(0, int(args.batch_size)),
+        batch_settle_seconds=max(0.0, float(args.batch_settle_seconds)),
+        health_cmd=args.health_cmd.strip(),
     )
     print(json.dumps(result, indent=2))
     return 0

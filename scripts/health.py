@@ -26,6 +26,7 @@ import httpx
 
 from quiz.config import load_dotenv
 from quiz.db import QuizDatabase
+from verdict.config import EXPERIMENT_STARTED_AT_UTC
 
 # Fixed freeze time from docs/EXPERIMENT.md: Nov 29, 2026, 09:00 IST (+05:30)
 FREEZE_UTC = datetime(2026, 11, 29, 3, 30, 0, tzinfo=UTC)
@@ -81,6 +82,11 @@ def build_health_report(
     """Collect integrity-only metrics from SQLite, Flagsmith, and quiz /healthz."""
     now = datetime.now(UTC)
     db = QuizDatabase(db_path)
+    window_start = (
+        EXPERIMENT_STARTED_AT_UTC
+        if env_name == "production" and str(exp_id) == "2"
+        else None
+    )
 
     def _strip_outcomes(raw: dict[str, Any]) -> dict[str, Any]:
         # Strip any conversion/outcome counts — expose ONLY exposure and completion counts!
@@ -90,9 +96,9 @@ def build_health_report(
             "by_arm": {arm: stats["exposures"] for arm, stats in raw["by_arm"].items()},
         }
 
-    sqlite_combined = _strip_outcomes(db.summarize(cohort="combined"))
-    sqlite_real = _strip_outcomes(db.summarize(cohort="real"))
-    sqlite_synthetic = _strip_outcomes(db.summarize(cohort="synthetic"))
+    sqlite_combined = _strip_outcomes(db.summarize(cohort="combined", since=window_start))
+    sqlite_real = _strip_outcomes(db.summarize(cohort="real", since=window_start))
+    sqlite_synthetic = _strip_outcomes(db.summarize(cohort="synthetic", since=window_start))
     sqlite_exposures = {
         # Keep top-level total/completions/by_arm reflecting combined SQLite vs Flagsmith
         # alongside explicit real vs synthetic splits so combined == Flagsmith reconciles cleanly.
@@ -161,6 +167,7 @@ def build_health_report(
         "freeze_utc": FREEZE_UTC.isoformat(),
         "env": env_name,
         "experiment_id": exp_id,
+        "window_start": window_start,
         "experiment_name": exp_meta.get("name"),
         "experiment_status": exp_meta.get("status"),
         "quiz_uptime": check_quiz_uptime(quiz_url),

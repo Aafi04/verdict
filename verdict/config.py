@@ -6,6 +6,11 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+# Registered start timestamp (UTC) of Production Experiment 2 (result_view_experiment_v2).
+# Rows recorded prior to this timestamp (e.g. pre-launch Experiment 1 phone-test row)
+# remain untouched in SQLite and are excluded from Experiment 2 counts/checks.
+EXPERIMENT_STARTED_AT_UTC = "2026-11-26T08:38:17Z"
+
 
 def load_dotenv(path: Path = Path(".env")) -> None:
     """Load key=value pairs from .env without overriding existing env vars."""
