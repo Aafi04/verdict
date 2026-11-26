@@ -6,7 +6,7 @@
 ## The one-paragraph pitch
 Experiment dashboards show "86% chance to win" next to an interval that crosses zero, and people ship the noise. Verdict is the second pair of eyes: it reads Flagsmith experiment results (including Flagsmith's `srm_p_value`, which Verdict cross-checks with its own chi-square test), applies a deterministic decision policy across credible interval, planned sample/power, and guardrail regression, logs every peeking look, and refuses to mutate any flag without typed human approval. The Track 1 experiment asks a real question about this exact problem: **does a verdict memo, compared with a standard win-probability view, make people less likely to ship an inconclusive result?** Verdict then judges that very experiment.
 
-> **Note on guardrail metric (`held_clear_win`)**: Flagsmith experiments attach one primary metric (`shipped_ambiguous`). The quiz still emits `held_clear_win` events to Flagsmith, and Verdict reads the `held_clear_win` guardrail from the quiz's local SQLite log rather than from Flagsmith's experiment results payload.
+> **Guardrail metric (`held_clear_win`)**: `held_clear_win` is attached directly to Production experiment `2` (`result_view_experiment_v2`) in Flagsmith (`expected_direction: not_increase`) alongside primary metric `shipped_ambiguous`, and is also logged locally in SQLite as an independent cross-check.
 
 ## Two submissions, one repo
 | | Track 1 | Track 2 |

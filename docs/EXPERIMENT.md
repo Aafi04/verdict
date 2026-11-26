@@ -12,7 +12,7 @@ Minimum effect of interest: 20 percentage points.
 - Variants: `dashboard` (control) vs `verdict`, 50/50, assigned by Flagsmith to a persistent visitor identity.
 - Exposure: scenario 1 render.
 - Primary metric: `shipped_ambiguous` (lower is better).
-- Guardrail: `held_clear_win` (must not rise materially; scenario 2 is a genuinely strong result).
+- Guardrail: `held_clear_win` (attached to experiment `2` in Flagsmith with `expected_direction: not_increase`, and also logged in SQLite as a cross-check; must not rise materially; scenario 2 is a genuinely strong result).
 - Planned sample: target at least 200 real completions (about 100 per arm), minimum 100 for a credible reading; fewer is reported honestly as a limitation. Decision time fixed in advance: **Nov 29, 2026, 09:00 IST**. Do not stop early because the result looks good.
 - Unit of analysis: visitor. One decision per scenario per visitor.
 

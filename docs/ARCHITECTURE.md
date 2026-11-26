@@ -59,7 +59,7 @@ Method names above are OURS. Mapping to real MCP tools / REST endpoints is recor
 - FastAPI + Jinja2, server-side rendering. Cookie `vid` = random UUID (signed), used as Flagsmith identity. No other tracking.
 - Routes: `/` landing+notice, `/s1` scenario 1, `/s2` scenario 2, `/done`, `/healthz`.
 - Exposure fires when `/s1` renders for a visitor (once per identity; guard with server-side set in SQLite so refresh does not duplicate).
-- Events: `shipped_ambiguous` (scenario 1, user chose Ship), `held_clear_win` (scenario 2, user chose Hold). Also log a local anonymised row in SQLite for a cross-check against Flagsmith's counts (also tags `simulated`).
+- Events: `shipped_ambiguous` (scenario 1, user chose Ship; primary metric, `expected_direction: decrease`) and `held_clear_win` (scenario 2, user chose Hold; guardrail metric, `expected_direction: not_increase`). Both metrics are attached to experiment `2` (`result_view_experiment_v2`) in Flagsmith and emitted via the SDK; every completion is also logged as a local anonymised row in SQLite (with `simulated` flag) as an independent cross-check against Flagsmith's counts.
 - Two views for scenario content, selected by the flag value:
   - `dashboard`: lift, "probability to beat control", credible interval table (mimicking a standard results view).
   - `verdict`: the memo format produced by `verdict.memo` (imported directly) for the same numbers (HOLD with reasons).
