@@ -39,3 +39,6 @@ Minimum effect of interest: 20 percentage points.
 - Guardrail: 
 - Verdict output (paste memo): 
 - Honest reading: 
+
+## Deviations
+- **2026-11-26 (pre-launch):** Experiment `1` (`result_view_experiment`) was ended (`completed`) before opening to participants because a single simulated test exposure (`sim-466fd99f-5c0d-4045-a4ac-3c3d228ed10a`) from the Nov 26 phone test reached Production via a `QuizSettings.from_env()` fallback to `FLAGSMITH_ENV_KEY` when `FLAGSMITH_SIM_ENV_KEY` was unset. The fallback was removed in commit `01e5d47` (`01e5d471ee9aeed29bba2de696a21b984d509d4c`), multivariate variant option `id=1` key was renamed from `Variant_1` to `verdict`, and Experiment `2` (`result_view_experiment_v2`) was created and started cleanly (`0` pre-launch exposures). Experiment `2` is now the registered experiment; hypothesis, metrics (`shipped_ambiguous` primary, `held_clear_win` guardrail), allocation (50/50, 100% rollout), and freeze time (**Nov 29, 2026, 09:00 IST**) remain unchanged.
