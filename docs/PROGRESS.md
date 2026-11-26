@@ -25,7 +25,7 @@
 - **Checklist**:
   - [x] `README.md` & `docs/PRD.md` updated (Flagsmith `srm_p_value` + cross-check; `held_clear_win` SQLite guardrail; Verdict differentiators)
   - [x] `docker/docker-compose.yml` ports locked to `127.0.0.1` (`8000`, `8001`, `8002`), verified via `netstat -ano`
-  - [x] `Simulation` environment (`GnPdS5LfRUt3FLAciFMVkt`) + `result_view_sim` (id `2`) created cleanly, leaving `Development` (id `1`) and `Production` untouched
+  - [x] `Simulation` environment (`FLAGSMITH_SIM_ENV_KEY` in `.env`) + `result_view_sim` (id `2`) created cleanly, leaving `Development` (id `1`) and `Production` untouched
   - [x] N5b single API attempt tested (`POST .../experiments/1/metrics/` -> `400 expected_direction`) and logged
   - [x] `scenarios/s1.json`, `scenarios/s2.json`, `verdict/memo.py`, `quiz/` (`app.py`, `config.py`, `db.py`, `flagsmith_sdk.py`, `security.py`, `simulate.py`, templates, CSS), `scripts/compare_counts.py`, `tests/test_quiz.py` implemented
   - [x] 20 `sim-` visits completed; `scripts/compare_counts.py --env simulation --refresh` confirmed exact match: SQLite `20` exposures (`11 dashboard`, `9 verdict`), `11` `shipped_ambiguous` (`7`/`4`), `4` `held_clear_win`; Flagsmith `control: 11`, `verdict: 9` and `shipped_ambiguous: 7 + 4 = 11`
