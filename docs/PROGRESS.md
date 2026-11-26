@@ -44,3 +44,17 @@
   - [x] `verdict/config.py`, `verdict/models.py`, `verdict/client/base.py`, `verdict/client/fixture.py`
   - [x] `verdict/checks.py`, `verdict/policy.py`, `verdict/audit.py`, `verdict/memo.py`, `verdict/cli.py`
   - [x] `ruff check verdict quiz scripts tests` clean (`All checks passed!`) and `pytest -v` green (`17 passed in 1.53s`); `verdict check` verified on all 6 fixtures offline (`SHIP`, `HOLD`, `HOLD` insufficient data, `REJECT` SRM, `REJECT` guardrail, `HOLD` peeking)
+
+## Phase 3 - Live wiring + approval (LOCAL CODE & TESTS COMPLETE; AWAITING LIVE SIMULATION DEMO VERIFICATION)
+- **Goal**: Implement live `RestClient` behind `FlagsmithClient`, `verdict apply` (dry-run, typed `APPROVE <id> <hash8>`, state-drift abort, `data/audit.jsonl`), `Simulation`-only seeded-fault SRM generator (`scripts/seed_fault.py`), anonymised CSV exporter (`scripts/export_csv.py`), and static results template (`verdict/templates/results.html`, `scripts/render_results.py`).
+- **Definition of done**:
+  - `RestClient` implements `FlagsmithClient` cleanly against Flagsmith Management REST API and is wired into `verdict check` & `verdict apply`.
+  - `verdict apply` refuses non-SHIP verdicts, defaults to `--dry-run`, verifies `APPROVE <id> <hash8>` and pre-write state drift before mutating, and logs to `data/audit.jsonl`.
+  - `scripts/seed_fault.py`, `scripts/export_csv.py`, and `scripts/render_results.py` enforce Simulation-only / pre-freeze safety guards and pass offline tests.
+- **Checklist**:
+  - [x] `RestClient` (`verdict/client/rest.py`), `Direction` normalization (`not_increase`/`not_decrease`), and CLI `--live --env` wiring (`3d9aa17`)
+  - [x] `verdict apply` with dry-run default, typed approval, state-drift abort, and `audit.jsonl` logging (`6a309e7`)
+  - [x] `scripts/seed_fault.py` Simulation-only seeded-fault generator + tests (`e3c37d4`)
+  - [x] `scripts/export_csv.py` anonymised CSV export (`visitors_anonymised.csv`, `summary_by_arm.csv`, `looks_anonymised.csv`) + pre-freeze guard (`1defa0d`)
+  - [x] `verdict/templates/results.html` + `scripts/render_results.py` static HTML report renderer + XSS/pre-freeze tests
+  - [x] `ruff check .` clean and `pytest -v` (`36 passed`)
