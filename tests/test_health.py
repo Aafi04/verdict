@@ -92,6 +92,7 @@ def test_health_report_excludes_outcomes_and_logs(tmp_path: Path, monkeypatch) -
     assert "held_clear_win" not in serialized
     assert "999" not in serialized
     assert "credible_interval" not in serialized
+    assert report["kind"] == "integrity"
     assert report["integrity_status"] == "OK"
     assert report["srm_p_value_flagsmith"] == 1.0
 
@@ -99,3 +100,4 @@ def test_health_report_excludes_outcomes_and_logs(tmp_path: Path, monkeypatch) -
     append_look_log(report, looks_path=looks_path)
     lines = looks_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
+    assert json.loads(lines[0])["kind"] == "integrity"

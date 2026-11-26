@@ -140,6 +140,7 @@ def build_health_report(
 
     return {
         "ts": now.isoformat(),
+        "kind": "integrity",
         "source": "scripts/health.py",
         "pre_freeze": now < FREEZE_UTC,
         "freeze_utc": FREEZE_UTC.isoformat(),
@@ -167,9 +168,10 @@ def build_health_report(
 
 def append_look_log(entry: dict[str, Any], looks_path: Path = Path("data/looks.jsonl")) -> None:
     """Append a single integrity look entry to data/looks.jsonl."""
+    payload = {"kind": "integrity", **entry}
     looks_path.parent.mkdir(parents=True, exist_ok=True)
     with looks_path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry) + "\n")
+        fh.write(json.dumps(payload) + "\n")
 
 
 def main() -> int:

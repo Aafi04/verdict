@@ -41,6 +41,34 @@ def test_cli_check_on_all_fixtures_offline(tmp_path: Path, capsys, monkeypatch) 
     assert len(lines) == len(expected)
     parsed = [json.loads(line) for line in lines]
     assert parsed[0]["experiment_id"] == "ship"
+    assert all(entry["kind"] == "effect" for entry in parsed)
+
+
+def test_integrity_looks_do_not_trigger_peeking(tmp_path: Path, capsys) -> None:
+    looks_file = tmp_path / "looks.jsonl"
+    integrity_entries = [
+        json.dumps({"ts": "2026-11-26T05:00:00Z", "kind": "integrity", "experiment_id": "peeking"})
+        for _ in range(5)
+    ]
+    looks_file.write_text("\n".join(integrity_entries) + "\n", encoding="utf-8")
+
+    rc = main(
+        [
+            "check",
+            "peeking",
+            "--fixture",
+            "--fixtures-dir",
+            "data/fixtures",
+            "--looks-path",
+            str(looks_file),
+            "--json",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    looks_chk = next(c for c in payload["checks"] if c["name"] == "looks")
+    assert looks_chk["status"] == "PASS"
+    assert "0 prior look" in looks_chk["detail"]
 
 
 def test_cli_check_json_and_peeking_log(tmp_path: Path, capsys) -> None:

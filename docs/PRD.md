@@ -27,7 +27,7 @@ Showing the Verdict memo instead of a standard win-probability view reduces the 
 - M1. Quiz: landing, notice, scenario 1 (ambiguous), scenario 2 (clear win), thank-you page with a short explanation of the right answers.
 - M2. Quiz uses Flagsmith experiment evaluation for `result_view` and sends the exposure and metric events; refresh does not double-count.
 - M3. `verdict check <experiment>` pulls exposures/results through `FlagsmithClient` and prints a memo with verdict, reasons, and every check's status.
-- M4. Checks: SRM (read from Flagsmith `srm_p_value` and cross-checked with Verdict's chi-square), min exposures per arm, interval crosses zero, planned sample not reached (power), guardrail regression (`held_clear_win` from SQLite log), look count (peeking log), exposure-vs-event sanity.
+- M4. Checks: SRM (read from Flagsmith `srm_p_value` and cross-checked with Verdict's chi-square), min exposures per arm, interval crosses zero, planned sample not reached (power), guardrail regression (`held_clear_win` from SQLite log), look count (peeking log — counts only `kind="effect"` looks, ignoring `kind="integrity"` checks), exposure-vs-event sanity.
 - M5. `verdict apply` proposes the exact write, is dry-run by default, requires typed approval, logs to `data/audit.jsonl`.
 - M6. Fixture mode: whole agent runs offline on `data/fixtures/*.json`.
 - M7. Seeded-fault demo experiment (clearly labelled simulated) that Verdict REJECTS.

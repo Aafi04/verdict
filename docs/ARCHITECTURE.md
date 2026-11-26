@@ -53,7 +53,7 @@ Method names above are OURS. Mapping to real MCP tools / REST endpoints is recor
 | prob_vs_interval | win probability > 80% while interval includes 0 -> flag "misleading headline" | WARN |
 | guardrail | guardrail metric worse with interval excluding 0 | REJECT input |
 | exposure_event_ratio | events with no matching exposure, or exposures rising with flat events beyond tolerance | WARN/FAIL |
-| looks | count of prior `check` runs on this experiment before sample reached | WARN (peeking) |
+| looks | count of prior `effect` looks (`kind: "effect"` in `looks.jsonl`) on this experiment before sample reached (`kind: "integrity"` checks are excluded) | WARN (peeking) |
 
 ## 4. Quiz (Track 1)
 - FastAPI + Jinja2, server-side rendering. Cookie `vid` = random UUID (signed), used as Flagsmith identity. No other tracking.

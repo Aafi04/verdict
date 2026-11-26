@@ -29,11 +29,11 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def count_prior_looks(experiment_id: str, looks_path: Path = DEFAULT_LOOKS_PATH) -> int:
-    """Count prior check runs logged for `experiment_id`."""
+    """Count prior 'effect' check runs logged for `experiment_id` (ignores 'integrity' checks)."""
     return sum(
         1
         for rec in _read_jsonl(looks_path)
-        if str(rec.get("experiment_id")) == str(experiment_id)
+        if str(rec.get("experiment_id")) == str(experiment_id) and rec.get("kind") == "effect"
     )
 
 
@@ -43,9 +43,10 @@ def append_look(
     verdict: VerdictResult,
     looks_path: Path = DEFAULT_LOOKS_PATH,
 ) -> dict[str, Any]:
-    """Append an experiment check entry to looks.jsonl."""
+    """Append an experiment effect check entry to looks.jsonl."""
     entry = {
         "ts": datetime.now(UTC).isoformat(),
+        "kind": "effect",
         "source": "verdict.cli",
         "experiment_id": experiment.id,
         "experiment_name": experiment.name,
