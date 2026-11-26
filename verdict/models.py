@@ -8,7 +8,14 @@ from pydantic import BaseModel, Field
 
 CheckStatus = Literal["PASS", "WARN", "FAIL", "HOLD"]
 VerdictDecision = Literal["SHIP", "HOLD", "REJECT"]
-Direction = Literal["increase", "decrease", "do_not_increase", "do_not_decrease"]
+Direction = Literal[
+    "increase",
+    "decrease",
+    "do_not_increase",
+    "do_not_decrease",
+    "not_increase",
+    "not_decrease",
+]
 MetricRole = Literal["primary", "guardrail", "secondary"]
 
 

@@ -88,13 +88,13 @@ def _interval_includes_zero(interval: Interval) -> bool:
 
 
 def _interval_is_favourable(interval: Interval, direction: Direction) -> bool:
-    if direction in ("decrease", "do_not_increase"):
+    if direction in ("decrease", "do_not_increase", "not_increase"):
         return interval.high < 0.0
     return interval.low > 0.0
 
 
 def _interval_regressed(interval: Interval, direction: Direction) -> bool:
-    if direction in ("decrease", "do_not_increase"):
+    if direction in ("decrease", "do_not_increase", "not_increase"):
         return interval.low > 0.0
     return interval.high < 0.0
 

@@ -11,8 +11,10 @@ from pathlib import Path
 
 from verdict.audit import DEFAULT_LOOKS_PATH, append_look, count_prior_looks, read_looks
 from verdict.checks import run_all_checks
+from verdict.client.base import FlagsmithClient
 from verdict.client.fixture import FixtureClient
-from verdict.config import VerdictThresholds
+from verdict.client.rest import RestClient
+from verdict.config import VerdictThresholds, resolve_env_config
 from verdict.memo import memo_from_verdict, render_memo_text
 from verdict.policy import evaluate_verdict
 
@@ -34,26 +36,65 @@ def _two_proportion_sample_per_arm(baseline: float, mde: float, alpha: float = 0
     return math.ceil(numerator / ((baseline - p2) ** 2))
 
 
+def _build_client(
+    *,
+    experiment_arg: str,
+    use_fixture: bool,
+    force_live: bool,
+    fixtures_dir: Path,
+    env_name: str,
+    refresh: bool,
+    planned_sample: int,
+) -> FlagsmithClient:
+    fixture_exists = (fixtures_dir / f"{Path(experiment_arg).name}.json").exists()
+    if use_fixture or (not force_live and fixture_exists):
+        return FixtureClient(fixtures_dir=fixtures_dir)
+
+    base_url, api_key, env_key, simulated = resolve_env_config(env_name)
+    return RestClient(
+        base_url=base_url,
+        api_key=api_key,
+        env_key=env_key,
+        planned_sample=planned_sample,
+        simulated=simulated,
+        refresh=refresh,
+    )
+
+
+def _close_if_needed(client: FlagsmithClient) -> None:
+    close_fn = getattr(client, "close", None)
+    if callable(close_fn):
+        close_fn()
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     fixtures_dir = Path(args.fixtures_dir)
     looks_path = Path(args.looks_path)
 
-    if args.fixture or (fixtures_dir / f"{Path(args.experiment).name}.json").exists():
-        client = FixtureClient(fixtures_dir=fixtures_dir)
-    else:
-        print(
-            "ERROR: Live Flagsmith client wiring is scheduled for Phase 3. "
-            "Pass --fixture for offline evaluation.",
-            file=sys.stderr,
+    try:
+        client = _build_client(
+            experiment_arg=args.experiment,
+            use_fixture=bool(args.fixture),
+            force_live=bool(args.live),
+            fixtures_dir=fixtures_dir,
+            env_name=args.env,
+            refresh=bool(args.refresh),
+            planned_sample=int(args.planned_sample),
         )
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    experiment = client.get_experiment(args.experiment)
-    exposure = client.get_exposures(args.experiment)
-    results = client.get_results(args.experiment)
+    try:
+        experiment = client.get_experiment(args.experiment)
+        exposure = client.get_exposures(args.experiment)
+        results = client.get_results(args.experiment)
+    finally:
+        _close_if_needed(client)
+
     prior_looks = count_prior_looks(experiment.id, looks_path=looks_path)
 
-    thresholds = VerdictThresholds()
+    thresholds = VerdictThresholds(default_planned_sample=int(args.planned_sample))
     checks = run_all_checks(
         experiment,
         exposure,
@@ -117,8 +158,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_check = sub.add_parser("check", help="Evaluate an experiment and print a decision memo")
-    p_check.add_argument("experiment", help="Experiment ID or fixture name")
-    p_check.add_argument("--fixture", action="store_true", help="Load from data/fixtures/*.json")
+    p_check.add_argument("experiment", help="Experiment ID, name, or fixture name")
+    p_check.add_argument("--fixture", action="store_true", help="Force loading data/fixtures/*.json")
+    p_check.add_argument("--live", action="store_true", help="Force live Flagsmith REST client")
+    p_check.add_argument(
+        "--env",
+        choices=("simulation", "development", "production"),
+        default="simulation",
+        help="Target Flagsmith environment when running live (default: simulation)",
+    )
+    p_check.add_argument("--refresh", action="store_true", help="Trigger Flagsmith exposure/results refresh")
+    p_check.add_argument("--planned-sample", type=int, default=200)
     p_check.add_argument("--fixtures-dir", default="data/fixtures")
     p_check.add_argument("--looks-path", default=str(DEFAULT_LOOKS_PATH))
     p_check.add_argument("--json", action="store_true", help="Print JSON output")
