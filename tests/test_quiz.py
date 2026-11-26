@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from quiz.app import create_app
 from quiz.config import DEFAULT_SCENARIOS_DIR, QuizSettings
 from quiz.db import Arm, QuizDatabase
+from quiz.flagsmith_sdk import NoopQuizSdk
 from quiz.security import sign_visitor_id
 
 
@@ -182,3 +183,49 @@ def test_vid_cookie_secure_over_https_proxy(tmp_path: Path) -> None:
         assert "HttpOnly" in set_cookie
         assert "SameSite=lax" in set_cookie
         assert "Secure" in set_cookie
+
+
+def test_fail_closed_in_production_without_sdk(tmp_path: Path) -> None:
+    settings = QuizSettings(
+        flagsmith_url="http://127.0.0.1:8000",
+        flagsmith_env_key="",
+        cookie_secret="unit-test-cookie-secret",
+        db_path=tmp_path / "quiz.db",
+        scenarios_dir=DEFAULT_SCENARIOS_DIR,
+        simulated_mode=False,
+    )
+    for app in (create_app(settings=settings), create_app(settings=settings, sdk=NoopQuizSdk())):
+        with TestClient(app) as client:
+            hz = client.get("/healthz")
+            assert hz.status_code == 503
+            assert hz.json()["status"] == "not-ok"
+
+            for method, path in (
+                ("get", "/s1"),
+                ("post", "/s1"),
+                ("get", "/s2"),
+                ("post", "/s2"),
+                ("get", "/done"),
+            ):
+                resp = (
+                    client.post(path, data={"choice": "ship"})
+                    if method == "post"
+                    else client.get(path)
+                )
+                assert resp.status_code == 503
+                assert "unavailable" in resp.text.lower()
+                assert "8000" not in resp.text
+
+
+def test_simulated_mode_keeps_noop_sdk_working(tmp_path: Path) -> None:
+    settings = QuizSettings(
+        flagsmith_url="http://127.0.0.1:8000",
+        flagsmith_env_key="",
+        cookie_secret="unit-test-cookie-secret",
+        db_path=tmp_path / "quiz.db",
+        scenarios_dir=DEFAULT_SCENARIOS_DIR,
+        simulated_mode=True,
+    )
+    with TestClient(create_app(settings=settings)) as client:
+        assert client.get("/healthz").status_code == 200
+        assert client.get("/s1").status_code == 200

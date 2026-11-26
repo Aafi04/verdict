@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Form, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -111,7 +111,7 @@ def create_app(
 
     if sdk is not None:
         quiz_sdk: QuizSdk = sdk
-    elif cfg.flagsmith_env_key:
+    elif cfg.flagsmith_env_key and cfg.flagsmith_url:
         quiz_sdk = FlagsmithQuizSdk(
             base_url=cfg.flagsmith_url,
             env_key=cfg.flagsmith_env_key,
@@ -119,6 +119,8 @@ def create_app(
         )
     else:
         quiz_sdk = NoopQuizSdk()
+
+    prod_sdk_unavailable = (not cfg.simulated_mode) and isinstance(quiz_sdk, NoopQuizSdk)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -149,9 +151,22 @@ def create_app(
         row, _ = db.record_exposure_once(vid, arm, simulated=cfg.simulated_mode)
         return row
 
+    def _prod_unavailable_response() -> Response | None:
+        if prod_sdk_unavailable:
+            return PlainTextResponse(
+                "Experiment service unavailable: Flagsmith SDK is not configured.",
+                status_code=503,
+            )
+        return None
+
     @app.get("/healthz")
-    def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+    def healthz() -> Response:
+        if prod_sdk_unavailable:
+            return JSONResponse(
+                {"status": "not-ok", "reason": "flagsmith_sdk_unconfigured"},
+                status_code=503,
+            )
+        return JSONResponse({"status": "ok"}, status_code=200)
 
     @app.get("/", response_class=HTMLResponse)
     def landing(request: Request) -> HTMLResponse:
@@ -165,7 +180,9 @@ def create_app(
         return resp
 
     @app.get("/s1", response_class=HTMLResponse)
-    def scenario_1(request: Request) -> HTMLResponse:
+    def scenario_1(request: Request) -> Response:
+        if unavail := _prod_unavailable_response():
+            return unavail
         vid, cookie_to_set = _get_or_issue_vid(request, cfg)
         visitor = _ensure_exposed(vid)
         scenario = scenarios["s1"]
@@ -190,6 +207,8 @@ def create_app(
 
     @app.post("/s1")
     def submit_s1(request: Request, choice: str = Form(...)) -> Response:
+        if unavail := _prod_unavailable_response():
+            return unavail
         if choice not in ("ship", "hold"):
             return JSONResponse({"detail": "Invalid choice"}, status_code=400)
         vid, cookie_to_set = _get_or_issue_vid(request, cfg)
@@ -203,6 +222,8 @@ def create_app(
 
     @app.get("/s2", response_class=HTMLResponse)
     def scenario_2(request: Request) -> Response:
+        if unavail := _prod_unavailable_response():
+            return unavail
         vid = verify_visitor_cookie(
             request.cookies.get(COOKIE_NAME),
             cfg.cookie_secret,
@@ -233,6 +254,8 @@ def create_app(
 
     @app.post("/s2")
     def submit_s2(request: Request, choice: str = Form(...)) -> Response:
+        if unavail := _prod_unavailable_response():
+            return unavail
         if choice not in ("ship", "hold"):
             return JSONResponse({"detail": "Invalid choice"}, status_code=400)
         vid = verify_visitor_cookie(
@@ -249,6 +272,8 @@ def create_app(
 
     @app.get("/done", response_class=HTMLResponse)
     def done(request: Request) -> Response:
+        if unavail := _prod_unavailable_response():
+            return unavail
         vid = verify_visitor_cookie(
             request.cookies.get(COOKIE_NAME),
             cfg.cookie_secret,
