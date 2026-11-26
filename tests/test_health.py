@@ -101,3 +101,70 @@ def test_health_report_excludes_outcomes_and_logs(tmp_path: Path, monkeypatch) -
     lines = looks_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0])["kind"] == "integrity"
+
+
+def test_health_report_splits_combined_real_and_synthetic(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "quiz.db"
+    db = QuizDatabase(db_path)
+    db.record_exposure_once("real-u1", "dashboard", simulated=False, synthetic=False)
+    db.record_exposure_once("sim-u2", "verdict", simulated=True, synthetic=True)
+    db.record_exposure_once("sim-u3", "dashboard", simulated=True, synthetic=True)
+    db.mark_completed("real-u1")
+
+    class FakeResp:
+        def __init__(self, payload: dict, status_code: int = 200) -> None:
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self) -> dict:
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def get(self, url: str) -> FakeResp:
+            if url.endswith("/exposures/"):
+                return FakeResp(
+                    {
+                        "exposures": {
+                            "as_of": "2026-11-26T04:00:00Z",
+                            "payload": {
+                                "timeseries": {
+                                    "points": [{"new_identities": {"control": 2, "verdict": 1}}]
+                                },
+                                "excluded_identities": 0,
+                            },
+                        }
+                    }
+                )
+            if url.endswith("/results/"):
+                return FakeResp({"results": {"payload": {"metrics": [], "srm_p_value": None}}})
+            return FakeResp({"name": "result_view_experiment_v2", "status": "running"})
+
+    monkeypatch.setattr("scripts.health.httpx.Client", FakeClient)
+    monkeypatch.setattr(
+        "scripts.health.httpx.get",
+        lambda *a, **kw: FakeResp({"status": "ok"}, status_code=200),
+    )
+
+    report = build_health_report(
+        env_name="production",
+        flagsmith_url="http://127.0.0.1:8000",
+        env_key="env-key",
+        api_key="api-key",
+        exp_id="2",
+        db_path=db_path,
+        quiz_url="http://127.0.0.1:3000",
+    )
+    assert report["sqlite_exposures"]["combined"]["total"] == 3
+    assert report["sqlite_exposures"]["real"]["total"] == 1
+    assert report["sqlite_exposures"]["synthetic"]["total"] == 2
+    assert report["count_diff"]["total"] == 0
+    assert report["integrity_status"] == "OK"

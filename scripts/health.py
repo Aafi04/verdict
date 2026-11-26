@@ -80,17 +80,28 @@ def build_health_report(
 ) -> dict[str, Any]:
     """Collect integrity-only metrics from SQLite, Flagsmith, and quiz /healthz."""
     now = datetime.now(UTC)
-    simulated_filter = env_name == "simulation"
-
     db = QuizDatabase(db_path)
-    sqlite_raw = db.summarize(simulated=simulated_filter)
-    # Strip any conversion/outcome counts — expose ONLY exposure and completion counts!
+
+    def _strip_outcomes(raw: dict[str, Any]) -> dict[str, Any]:
+        # Strip any conversion/outcome counts — expose ONLY exposure and completion counts!
+        return {
+            "total": raw["totals"]["exposures"],
+            "completions": raw["totals"]["completions"],
+            "by_arm": {arm: stats["exposures"] for arm, stats in raw["by_arm"].items()},
+        }
+
+    sqlite_combined = _strip_outcomes(db.summarize(cohort="combined"))
+    sqlite_real = _strip_outcomes(db.summarize(cohort="real"))
+    sqlite_synthetic = _strip_outcomes(db.summarize(cohort="synthetic"))
     sqlite_exposures = {
-        "total": sqlite_raw["totals"]["exposures"],
-        "completions": sqlite_raw["totals"]["completions"],
-        "by_arm": {
-            arm: stats["exposures"] for arm, stats in sqlite_raw["by_arm"].items()
-        },
+        # Keep top-level total/completions/by_arm reflecting combined SQLite vs Flagsmith
+        # alongside explicit real vs synthetic splits so combined == Flagsmith reconciles cleanly.
+        "total": sqlite_combined["total"],
+        "completions": sqlite_combined["completions"],
+        "by_arm": sqlite_combined["by_arm"],
+        "combined": sqlite_combined,
+        "real": sqlite_real,
+        "synthetic": sqlite_synthetic,
     }
 
     base = flagsmith_url.rstrip("/")
@@ -114,16 +125,20 @@ def build_health_report(
     fs_results_obj = res_payload.get("results") or {}
     fs_srm_p = (fs_results_obj.get("payload") or {}).get("srm_p_value")
 
-    ctrl_n = sqlite_exposures["by_arm"].get("dashboard", 0)
-    var_n = sqlite_exposures["by_arm"].get("verdict", 0)
+    cohort_for_srm = sqlite_real if env_name != "simulation" and sqlite_synthetic["total"] == 0 else (
+        sqlite_synthetic if env_name == "simulation" else sqlite_combined
+    )
+    ctrl_n = cohort_for_srm["by_arm"].get("dashboard", 0)
+    var_n = cohort_for_srm["by_arm"].get("verdict", 0)
     verdict_srm_p = compute_chi2_srm_p_value(ctrl_n, var_n, control_weight=0.5)
 
     fs_ctrl = fs_by_arm.get("control", 0)
     fs_var = fs_by_arm.get("verdict", 0)
-    diff_total = sqlite_exposures["total"] - fs_total
+    compared_sqlite = sqlite_synthetic if env_name == "simulation" else sqlite_combined
+    diff_total = compared_sqlite["total"] - fs_total
     diff_by_arm = {
-        "dashboard_vs_control": ctrl_n - fs_ctrl,
-        "verdict": var_n - fs_var,
+        "dashboard_vs_control": compared_sqlite["by_arm"].get("dashboard", 0) - fs_ctrl,
+        "verdict": compared_sqlite["by_arm"].get("verdict", 0) - fs_var,
     }
 
     srm_fail = (verdict_srm_p is not None and verdict_srm_p < 0.001) or (

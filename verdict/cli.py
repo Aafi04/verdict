@@ -23,6 +23,7 @@ from verdict.checks import run_all_checks
 from verdict.client.base import FlagsmithClient
 from verdict.client.fixture import FixtureClient
 from verdict.client.rest import RestClient
+from verdict.cohort import build_cohort_comparison
 from verdict.config import VerdictThresholds, resolve_env_config
 from verdict.memo import memo_from_verdict, render_memo_text
 from verdict.models import Experiment, ExperimentResults, Exposure, VerdictResult
@@ -100,9 +101,20 @@ def _evaluate_with_client(
     return experiment, exposure, results, verdict
 
 
+def _resolve_db_path(args: argparse.Namespace) -> Path | None:
+    explicit = getattr(args, "db_path", None)
+    if explicit:
+        return Path(explicit)
+    fixture_exists = (Path(args.fixtures_dir) / f"{Path(args.experiment).name}.json").exists()
+    if bool(args.fixture) or (not bool(args.live) and fixture_exists):
+        return None
+    return Path("data/quiz.db")
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     fixtures_dir = Path(args.fixtures_dir)
     looks_path = Path(args.looks_path)
+    db_path = _resolve_db_path(args)
 
     try:
         client = _build_client(
@@ -128,6 +140,16 @@ def _cmd_check(args: argparse.Namespace) -> int:
     finally:
         _close_if_needed(client)
 
+    prior_looks = count_prior_looks(experiment.id, looks_path=looks_path)
+    thresholds = VerdictThresholds(default_planned_sample=int(args.planned_sample))
+    comparison = build_cohort_comparison(
+        experiment,
+        exposure,
+        verdict,
+        db_path=db_path,
+        prior_looks=prior_looks,
+        thresholds=thresholds,
+    )
     append_look(experiment, exposure, verdict, looks_path=looks_path)
 
     if args.json:
@@ -135,15 +157,29 @@ def _cmd_check(args: argparse.Namespace) -> int:
             "experiment": experiment.model_dump(),
             "exposures": exposure.model_dump(),
             "verdict": verdict.verdict,
+            "combined_verdict": comparison.combined_verdict.verdict,
             "verdict_hash": verdict.verdict_hash,
             "winning_arm": verdict.winning_arm,
+            "sample_breakdown": {
+                "combined_n": comparison.combined_n,
+                "real_n": comparison.real_n,
+                "synthetic_n": comparison.synthetic_n,
+            },
+            "real_only": {
+                "verdict": comparison.real_only_verdict.verdict,
+                "verdict_hash": comparison.real_only_verdict.verdict_hash,
+                "reasons": comparison.real_only_verdict.reasons,
+                "next_action": comparison.real_only_verdict.next_action,
+            },
+            "verdict_disagreement": comparison.disagreement,
+            "disagreement_detail": comparison.disagreement_detail,
             "checks": [c.model_dump() for c in verdict.checks],
             "reasons": verdict.reasons,
             "next_action": verdict.next_action,
         }
         print(json.dumps(payload, indent=2))
     else:
-        memo = memo_from_verdict(experiment, exposure, results, verdict)
+        memo = memo_from_verdict(experiment, exposure, results, verdict, comparison=comparison)
         print(render_memo_text(memo))
     return 0
 
@@ -283,6 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--refresh", action="store_true", help="Trigger Flagsmith exposure/results refresh")
     p_check.add_argument("--planned-sample", type=int, default=200)
     p_check.add_argument("--fixtures-dir", default="data/fixtures")
+    p_check.add_argument("--db-path", default=None, help="Optional SQLite DB for real vs synthetic split")
     p_check.add_argument("--looks-path", default=str(DEFAULT_LOOKS_PATH))
     p_check.add_argument("--json", action="store_true", help="Print JSON output")
 

@@ -69,15 +69,26 @@ def export_csvs(
         conn = sqlite3.connect(db_path, timeout=5.0)
         conn.row_factory = sqlite3.Row
         try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(visitors)").fetchall()}
+            has_synthetic = "synthetic" in cols
+            syn_expr = "synthetic" if has_synthetic else "simulated"
             where = ""
             params: tuple[Any, ...] = ()
             if mode == "production":
-                where = "WHERE simulated = 0"
+                where = f"WHERE {syn_expr} = 0 AND simulated = 0"
             elif mode == "simulation":
-                where = "WHERE simulated = 1"
+                where = f"WHERE {syn_expr} = 1 OR simulated = 1"
             rows = conn.execute(
                 f"""
-                SELECT vid, arm, exposed_at, simulated, s1_choice, s2_choice, completed_at
+                SELECT
+                    vid,
+                    arm,
+                    exposed_at,
+                    simulated,
+                    {syn_expr} AS synthetic,
+                    s1_choice,
+                    s2_choice,
+                    completed_at
                 FROM visitors
                 {where}
                 ORDER BY exposed_at ASC
@@ -95,6 +106,7 @@ def export_csvs(
                 "anon_id",
                 "arm",
                 "simulated",
+                "synthetic",
                 "exposed_hour_utc",
                 "s1_choice",
                 "s2_choice",
@@ -102,11 +114,13 @@ def export_csvs(
             ]
         )
         for row in rows:
+            is_syn = bool(int(row["synthetic"]) or int(row["simulated"]))
             writer.writerow(
                 [
                     _anon_id(str(row["vid"]), salt),
                     row["arm"],
                     "true" if int(row["simulated"]) else "false",
+                    1 if is_syn else 0,
                     _round_hour_utc(row["exposed_at"]),
                     row["s1_choice"] or "",
                     row["s2_choice"] or "",
@@ -114,11 +128,11 @@ def export_csvs(
                 ]
             )
 
-    # Aggregate separately by (simulated, arm) so real and simulated are never merged.
+    # Aggregate separately by (synthetic, arm) so real and synthetic are never merged silently.
     agg: dict[tuple[bool, str], dict[str, int]] = {}
     for row in rows:
-        is_sim = bool(int(row["simulated"]))
-        key = (is_sim, str(row["arm"]))
+        is_syn = bool(int(row["synthetic"]) or int(row["simulated"]))
+        key = (is_syn, str(row["arm"]))
         bucket = agg.setdefault(
             key,
             {

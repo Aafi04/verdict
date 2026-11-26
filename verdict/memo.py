@@ -8,9 +8,12 @@ module renders purely from templates.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from verdict.models import Experiment, ExperimentResults, Exposure, VerdictResult
+
+if TYPE_CHECKING:
+    from verdict.cohort import CohortComparison
 
 CheckStatus = Literal["PASS", "WARN", "FAIL", "HOLD"]
 VerdictDecision = Literal["SHIP", "HOLD", "REJECT"]
@@ -42,6 +45,11 @@ class MemoInput:
     reasons: list[str] = field(default_factory=list)
     next_action: str = ""
     simulated: bool = False
+    combined_n: int | None = None
+    real_n: int | None = None
+    synthetic_n: int | None = None
+    real_only_verdict: VerdictDecision | None = None
+    disagreement_detail: str | None = None
 
 
 def memo_from_scenario(scenario: dict[str, Any]) -> MemoInput:
@@ -80,12 +88,24 @@ def render_memo_text(memo: MemoInput) -> str:
         f"VERDICT: {memo.verdict}" + (" [SIMULATED]" if memo.simulated else ""),
         f"Experiment: {memo.experiment_name}",
         f"Summary: {memo.summary}",
-        "",
-        f"Primary metric: {memo.primary_metric}",
-        f"  Lift: {memo.lift} | 95% CI: {memo.interval} | Win prob: {memo.win_probability}",
-        f"  Sample: {memo.sample_status}",
-        f"Guardrail: {memo.guardrail_status}",
     ]
+    if memo.combined_n is not None and memo.real_n is not None and memo.synthetic_n is not None:
+        lines.append(
+            f"Cohorts: combined N={memo.combined_n} (real N={memo.real_n}, synthetic N={memo.synthetic_n})"
+        )
+    if memo.real_only_verdict is not None:
+        lines.append(f"Verdicts: combined={memo.verdict} | real-only={memo.real_only_verdict}")
+    if memo.disagreement_detail:
+        lines.append(f"DISAGREEMENT: {memo.disagreement_detail}")
+    lines.extend(
+        [
+            "",
+            f"Primary metric: {memo.primary_metric}",
+            f"  Lift: {memo.lift} | 95% CI: {memo.interval} | Win prob: {memo.win_probability}",
+            f"  Sample: {memo.sample_status}",
+            f"Guardrail: {memo.guardrail_status}",
+        ]
+    )
     if memo.reasons:
         lines.append("")
         lines.append("Why:")
@@ -107,6 +127,8 @@ def memo_from_verdict(
     exposure: Exposure,
     results: ExperimentResults,
     verdict: VerdictResult,
+    *,
+    comparison: CohortComparison | None = None,
 ) -> MemoInput:
     """Build a MemoInput from live or fixture Verdict evaluation models."""
     primary = next((m for m in results.metrics if m.role == "primary"), None)
@@ -172,5 +194,10 @@ def memo_from_verdict(
         checks=checks,
         reasons=verdict.reasons,
         next_action=verdict.next_action,
-        simulated=experiment.simulated,
+        simulated=experiment.simulated or (comparison is not None and comparison.synthetic_n > 0),
+        combined_n=comparison.combined_n if comparison else None,
+        real_n=comparison.real_n if comparison else None,
+        synthetic_n=comparison.synthetic_n if comparison else None,
+        real_only_verdict=comparison.real_only_verdict.verdict if comparison else None,
+        disagreement_detail=comparison.disagreement_detail if comparison else None,
     )

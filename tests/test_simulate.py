@@ -1,0 +1,99 @@
+"""Unit tests for quiz/simulate.py generative model, --dry-run determinism, and auth."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from quiz.app import create_app
+from quiz.config import DEFAULT_SCENARIOS_DIR, QuizSettings
+from quiz.db import QuizDatabase
+from quiz.simulate import (
+    P_COMPLETE_POST_EXPOSURE,
+    P_HOLD_S2_DASHBOARD,
+    P_HOLD_S2_VERDICT,
+    P_SHIP_S1_DASHBOARD,
+    P_SHIP_S1_VERDICT,
+    default_synthetic_count,
+    main,
+    run_simulation,
+)
+from tests.test_quiz import StubSdk
+
+
+def test_fixed_generative_parameters_match_spec() -> None:
+    assert P_SHIP_S1_DASHBOARD == 0.60
+    assert P_SHIP_S1_VERDICT == 0.42
+    assert P_HOLD_S2_DASHBOARD == 0.08
+    assert P_HOLD_S2_VERDICT == 0.09
+    assert P_COMPLETE_POST_EXPOSURE == 0.88
+
+
+def test_dry_run_identical_output_for_same_seed_and_no_http(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("HTTP client must not be constructed in --dry-run")
+
+    monkeypatch.setattr("quiz.simulate.httpx.Client", fail_if_called)
+
+    db_path = tmp_path / "quiz.db"
+    db = QuizDatabase(db_path)
+    for i in range(5):
+        db.record_exposure_once(f"real-{i}", "dashboard", simulated=False, synthetic=False)
+    for i in range(10):
+        db.record_exposure_once(f"sim-{i}", "verdict", simulated=True, synthetic=True)
+
+    assert main(["--dry-run", "--db-path", str(db_path), "--seed", "20261126"]) == 0
+    out1 = capsys.readouterr().out
+    assert main(["--dry-run", "--db-path", str(db_path), "--seed", "20261126"]) == 0
+    out2 = capsys.readouterr().out
+
+    assert out1 == out2
+    parsed = json.loads(out1)
+    assert parsed["dry_run"] is True
+    assert parsed["count"] == 195  # max(0, 200 - 5 real exposures), ignores 10 synthetic
+    assert len(parsed["visitors"]) == 195
+
+
+def test_default_synthetic_count_clamps_at_zero(tmp_path: Path) -> None:
+    db_path = tmp_path / "quiz.db"
+    db = QuizDatabase(db_path)
+    for i in range(210):
+        db.record_exposure_once(f"real-{i}", "verdict", simulated=False, synthetic=False)
+    assert default_synthetic_count(db_path) == 0
+
+
+def test_simulation_runs_through_production_quiz_with_token_and_dropout(tmp_path: Path) -> None:
+    sdk = StubSdk(default_arm="verdict")
+    settings = QuizSettings(
+        flagsmith_url="http://127.0.0.1:8000",
+        flagsmith_env_key="prod-key",
+        cookie_secret="unit-test-cookie-secret",
+        db_path=tmp_path / "quiz.db",
+        scenarios_dir=DEFAULT_SCENARIOS_DIR,
+        simulated_mode=False,
+        rate_limit_per_min=2,
+        synthetic_token="synth-token-xyz",
+    )
+    app = create_app(settings=settings, sdk=sdk)
+
+    summary = run_simulation(
+        "http://testserver",
+        count=25,
+        seed=20261126,
+        synthetic_token="synth-token-xyz",
+        client_factory=lambda **kw: TestClient(app, headers=kw.get("headers", {})),
+    )
+    assert summary["count"] == 25
+    assert summary["arms"]["verdict"] == 25
+    assert summary["refresh_checked"] is True
+    assert summary["double_submit_checked"] is True
+    # 12% post-exposure drop-off produces partial completions (< 25)
+    assert 1 <= summary["completions"]["verdict"] < 25
+
+    db = QuizDatabase(settings.db_path)
+    assert db.summarize(cohort="synthetic")["totals"]["exposures"] == 25
+    assert db.summarize(cohort="real")["totals"]["exposures"] == 0

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -55,7 +56,7 @@ def _client_ip_for_rate_limit(request: Request) -> str | None:
             return cf_ip.strip()
         xff = request.headers.get("x-forwarded-for")
         if xff:
-            return xff.split(",")[0].strip()
+            return xff.split(",")[-1].strip()
     return request.client.host if request.client else None
 
 
@@ -70,18 +71,32 @@ def _is_https_request(request: Request) -> bool:
     return False
 
 
+def _is_authorized_synthetic(request: Request, settings: QuizSettings) -> bool:
+    """Return True when simulated mode is enabled or request presents valid synthetic token."""
+    if settings.simulated_mode:
+        return True
+    token = request.headers.get("x-verdict-synthetic", "")
+    if not token or not settings.synthetic_token:
+        return False
+    return hmac.compare_digest(
+        token.encode("utf-8"),
+        settings.synthetic_token.encode("utf-8"),
+    )
+
+
 def _get_or_issue_vid(
-    request: Request, settings: QuizSettings
+    request: Request, settings: QuizSettings, *, allow_synthetic: bool = False
 ) -> tuple[str, str | None]:
     """Return (vid, cookie_value_to_set_or_None)."""
+    allow_sim = settings.simulated_mode or allow_synthetic
     existing = verify_visitor_cookie(
         request.cookies.get(COOKIE_NAME),
         settings.cookie_secret,
-        allow_sim_prefix=settings.simulated_mode,
+        allow_sim_prefix=allow_sim,
     )
     if existing:
         return existing, None
-    vid = new_visitor_id(simulated=settings.simulated_mode)
+    vid = new_visitor_id(simulated=allow_sim)
     return vid, sign_visitor_id(vid, settings.cookie_secret)
 
 
@@ -135,7 +150,12 @@ def create_app(
 
     @app.middleware("http")
     async def security_and_rate_limit(request: Request, call_next):
-        if request.url.path != "/healthz" and not rate_limiter.allow(_client_ip_for_rate_limit(request)):
+        synthetic_bypass = _is_authorized_synthetic(request, cfg)
+        if (
+            request.url.path != "/healthz"
+            and not synthetic_bypass
+            and not rate_limiter.allow(_client_ip_for_rate_limit(request))
+        ):
             return JSONResponse({"detail": "Too many requests. Please slow down."}, status_code=429)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -143,12 +163,17 @@ def create_app(
         response.headers["X-Frame-Options"] = "DENY"
         return response
 
-    def _ensure_exposed(vid: str) -> dict[str, Any]:
+    def _ensure_exposed(vid: str, *, synthetic: bool) -> dict[str, Any]:
         existing = db.get_visitor(vid)
         if existing is not None:
             return existing
         arm: Arm = quiz_sdk.evaluate_and_expose(vid)
-        row, _ = db.record_exposure_once(vid, arm, simulated=cfg.simulated_mode)
+        row, _ = db.record_exposure_once(
+            vid,
+            arm,
+            simulated=cfg.simulated_mode or synthetic,
+            synthetic=synthetic or vid.startswith("sim-"),
+        )
         return row
 
     def _prod_unavailable_response() -> Response | None:
@@ -170,7 +195,8 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     def landing(request: Request) -> HTMLResponse:
-        _, cookie_to_set = _get_or_issue_vid(request, cfg)
+        allow_syn = _is_authorized_synthetic(request, cfg)
+        _, cookie_to_set = _get_or_issue_vid(request, cfg, allow_synthetic=allow_syn)
         resp = templates.TemplateResponse(
             request=request,
             name="landing.html",
@@ -183,8 +209,9 @@ def create_app(
     def scenario_1(request: Request) -> Response:
         if unavail := _prod_unavailable_response():
             return unavail
-        vid, cookie_to_set = _get_or_issue_vid(request, cfg)
-        visitor = _ensure_exposed(vid)
+        allow_syn = _is_authorized_synthetic(request, cfg)
+        vid, cookie_to_set = _get_or_issue_vid(request, cfg, allow_synthetic=allow_syn)
+        visitor = _ensure_exposed(vid, synthetic=allow_syn)
         scenario = scenarios["s1"]
         memo = memo_from_scenario(scenario)
         resp = templates.TemplateResponse(
@@ -211,8 +238,9 @@ def create_app(
             return unavail
         if choice not in ("ship", "hold"):
             return JSONResponse({"detail": "Invalid choice"}, status_code=400)
-        vid, cookie_to_set = _get_or_issue_vid(request, cfg)
-        _ensure_exposed(vid)
+        allow_syn = _is_authorized_synthetic(request, cfg)
+        vid, cookie_to_set = _get_or_issue_vid(request, cfg, allow_synthetic=allow_syn)
+        _ensure_exposed(vid, synthetic=allow_syn)
         typed_choice: Choice = choice  # type: ignore[assignment]
         if db.record_choice_once(vid, "s1", typed_choice) and typed_choice == "ship":
             quiz_sdk.track_event("shipped_ambiguous", vid)
@@ -224,13 +252,14 @@ def create_app(
     def scenario_2(request: Request) -> Response:
         if unavail := _prod_unavailable_response():
             return unavail
+        allow_syn = _is_authorized_synthetic(request, cfg)
         vid = verify_visitor_cookie(
             request.cookies.get(COOKIE_NAME),
             cfg.cookie_secret,
-            allow_sim_prefix=cfg.simulated_mode,
+            allow_sim_prefix=allow_syn,
         )
         if not vid:
-            _, replacement = _get_or_issue_vid(request, cfg)
+            _, replacement = _get_or_issue_vid(request, cfg, allow_synthetic=allow_syn)
             resp = RedirectResponse(url="/s1", status_code=303)
             _set_vid_cookie(request, resp, replacement)
             return resp
@@ -261,13 +290,14 @@ def create_app(
             return unavail
         if choice not in ("ship", "hold"):
             return JSONResponse({"detail": "Invalid choice"}, status_code=400)
+        allow_syn = _is_authorized_synthetic(request, cfg)
         vid = verify_visitor_cookie(
             request.cookies.get(COOKIE_NAME),
             cfg.cookie_secret,
-            allow_sim_prefix=cfg.simulated_mode,
+            allow_sim_prefix=allow_syn,
         )
         if not vid or db.get_visitor(vid) is None:
-            _, replacement = _get_or_issue_vid(request, cfg) if not vid else (vid, None)
+            _, replacement = _get_or_issue_vid(request, cfg, allow_synthetic=allow_syn) if not vid else (vid, None)
             resp = RedirectResponse(url="/s1", status_code=303)
             _set_vid_cookie(request, resp, replacement)
             return resp
@@ -280,13 +310,14 @@ def create_app(
     def done(request: Request) -> Response:
         if unavail := _prod_unavailable_response():
             return unavail
+        allow_syn = _is_authorized_synthetic(request, cfg)
         vid = verify_visitor_cookie(
             request.cookies.get(COOKIE_NAME),
             cfg.cookie_secret,
-            allow_sim_prefix=cfg.simulated_mode,
+            allow_sim_prefix=allow_syn,
         )
         if not vid:
-            _, replacement = _get_or_issue_vid(request, cfg)
+            _, replacement = _get_or_issue_vid(request, cfg, allow_synthetic=allow_syn)
             resp = RedirectResponse(url="/", status_code=303)
             _set_vid_cookie(request, resp, replacement)
             return resp

@@ -283,3 +283,79 @@ def test_env_key_selection_all_four_combinations(tmp_path: Path, monkeypatch) ->
     with TestClient(create_app(settings=s4)) as client:
         assert client.get("/healthz").status_code == 503
         assert client.get("/s1").status_code == 503
+
+
+def test_sqlite_synthetic_column_migration_is_idempotent(tmp_path: Path) -> None:
+    import sqlite3
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE visitors (
+            vid TEXT PRIMARY KEY,
+            arm TEXT NOT NULL CHECK (arm IN ('dashboard', 'verdict')),
+            exposed_at TEXT NOT NULL,
+            simulated INTEGER NOT NULL DEFAULT 0,
+            s1_choice TEXT,
+            s1_answered_at TEXT,
+            s2_choice TEXT,
+            s2_answered_at TEXT,
+            completed_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO visitors (vid, arm, exposed_at, simulated) VALUES ('real-1', 'dashboard', '2026-11-26T00:00:00Z', 0)"
+    )
+    conn.execute(
+        "INSERT INTO visitors (vid, arm, exposed_at, simulated) VALUES ('sim-old-1', 'verdict', '2026-11-26T00:00:00Z', 1)"
+    )
+    conn.commit()
+    conn.close()
+
+    # First open migrates and backfills synthetic; second open is idempotent no-op.
+    db1 = QuizDatabase(db_path)
+    db2 = QuizDatabase(db_path)
+    assert db2.count_real_exposures() == 1
+    assert db1.summarize(cohort="synthetic")["totals"]["exposures"] == 1
+    assert db2.summarize(cohort="combined")["totals"]["exposures"] == 2
+    row_real = db2.get_visitor("real-1")
+    row_sim = db2.get_visitor("sim-old-1")
+    assert row_real is not None and row_real["synthetic"] == 0
+    assert row_sim is not None and row_sim["synthetic"] == 1
+
+
+def test_synthetic_token_allows_sim_prefix_and_bypasses_rate_limit(tmp_path: Path) -> None:
+    sdk = StubSdk(default_arm="verdict")
+    settings = QuizSettings(
+        flagsmith_url="http://127.0.0.1:8000",
+        flagsmith_env_key="prod-key",
+        cookie_secret="unit-test-cookie-secret",
+        db_path=tmp_path / "quiz.db",
+        scenarios_dir=DEFAULT_SCENARIOS_DIR,
+        simulated_mode=False,
+        rate_limit_per_min=2,
+        synthetic_token="super-secret-synth-token",
+    )
+    app = create_app(settings=settings, sdk=sdk)
+
+    with TestClient(app) as client:
+        # Wrong token still hits rate limit after 2 requests and cannot get sim- cookie.
+        bad_headers = {"X-Verdict-Synthetic": "wrong-token"}
+        assert client.get("/", headers=bad_headers).status_code == 200
+        assert client.get("/s1", headers=bad_headers).status_code == 200
+        assert client.get("/", headers=bad_headers).status_code == 429
+
+        # Valid token bypasses rate limit, issues sim- cookie, and stores synthetic=1.
+        good_headers = {"X-Verdict-Synthetic": "super-secret-synth-token"}
+        for _ in range(5):
+            r = client.get("/", headers=good_headers)
+            assert r.status_code == 200
+        client.cookies.clear()
+        r1 = client.get("/s1", headers=good_headers)
+        assert r1.status_code == 200
+        assert sdk.exposures[-1].startswith("sim-")
+        db = QuizDatabase(settings.db_path)
+        assert db.summarize(cohort="synthetic")["totals"]["exposures"] == 1
+        assert db.summarize(cohort="real")["totals"]["exposures"] == 1

@@ -44,6 +44,7 @@ class QuizSettings:
     flag_name: str = "result_view"
     simulated_mode: bool = False
     rate_limit_per_min: int = 120
+    synthetic_token: str = ""
 
     @classmethod
     def from_env(cls) -> QuizSettings:
@@ -78,4 +79,5 @@ class QuizSettings:
             flag_name=os.getenv("QUIZ_FLAG_NAME", "result_view").strip() or "result_view",
             simulated_mode=simulated_mode,
             rate_limit_per_min=rate_limit,
+            synthetic_token=os.getenv("QUIZ_SYNTHETIC_TOKEN", "").strip(),
         )

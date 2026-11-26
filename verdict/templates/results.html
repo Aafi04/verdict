@@ -78,14 +78,21 @@
       <div class="meta">generated {{ generated_at }}</div>
     </div>
 
-    {% if experiment.simulated %}
+    {% if experiment.simulated or cohort.synthetic_n > 0 %}
     <div class="banner-sim">
-      SIMULATED DATA (simulated=true): This report reflects simulated or fixture traffic and must never be mixed with Production results.
+      SYNTHETIC / SIMULATED DATA PRESENT: {{ cohort.synthetic_n }} of {{ cohort.combined_n }} exposures carry the <code>sim-</code> / <code>synthetic=1</code> label. Real-only results ({{ cohort.real_n }} exposures) are shown alongside the combined result.
+    </div>
+    {% endif %}
+
+    {% if cohort.disagreement %}
+    <div class="banner-sim" style="background: var(--reject-soft); color: var(--reject-bg); border-color: #fca5a5;">
+      {{ cohort.disagreement_detail }}
     </div>
     {% endif %}
 
     <section class="card">
-      <span class="badge badge-{{ verdict.verdict }}">VERDICT: {{ verdict.verdict }}</span>
+      <span class="badge badge-{{ verdict.verdict }}">COMBINED VERDICT: {{ verdict.verdict }}</span>
+      <span class="badge badge-{{ cohort.real_only_verdict.verdict }}" style="margin-left: 8px;">REAL-ONLY VERDICT: {{ cohort.real_only_verdict.verdict }}</span>
       <h1 style="margin-top: 12px;">{{ experiment.name }}</h1>
       {% if experiment.hypothesis %}
       <p><strong>Hypothesis:</strong> {{ experiment.hypothesis }}</p>
@@ -94,25 +101,38 @@
 
       <div class="grid">
         <div class="stat">
-          <div class="stat-label">Experiment ID / Feature</div>
-          <div class="stat-val">{{ experiment.id }} / {{ experiment.feature_name }}</div>
+          <div class="stat-label">Combined N / Planned</div>
+          <div class="stat-val">{{ cohort.combined_n }} / {{ experiment.planned_sample }}</div>
         </div>
         <div class="stat">
-          <div class="stat-label">Exposures / Planned</div>
-          <div class="stat-val">{{ exposure.total }} / {{ experiment.planned_sample }}</div>
+          <div class="stat-label">Real N (synthetic=0)</div>
+          <div class="stat-val">{{ cohort.real_n }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Synthetic N (sim-)</div>
+          <div class="stat-val">{{ cohort.synthetic_n }}</div>
         </div>
         <div class="stat">
           <div class="stat-label">Verdict Hash</div>
           <div class="stat-val">{{ verdict.verdict_hash[:12] }}</div>
         </div>
-        <div class="stat">
-          <div class="stat-label">Data As Of</div>
-          <div class="stat-val" style="font-size: 0.9rem;">{{ results.as_of or exposure.as_of or "n/a" }}</div>
-        </div>
       </div>
 
+      <p class="meta" style="margin-top: 10px;">
+        Experiment ID {{ experiment.id }} ({{ experiment.feature_name }}) | Data as of: {{ results.as_of or exposure.as_of or "n/a" }}
+      </p>
+
+      {% if cohort.real_only_verdict.reasons %}
+      <h2 style="margin-top: 16px;">Real-Only Cohort Summary (N={{ cohort.real_n }})</h2>
+      <ul>
+        {% for reason in cohort.real_only_verdict.reasons %}
+        <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
       {% if verdict.reasons %}
-      <h2 style="margin-top: 18px;">Reasons</h2>
+      <h2 style="margin-top: 18px;">Combined Verdict Reasons (N={{ cohort.combined_n }})</h2>
       <ul>
         {% for reason in verdict.reasons %}
         <li>{{ reason }}</li>

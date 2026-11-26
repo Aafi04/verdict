@@ -15,6 +15,7 @@ from verdict.audit import DEFAULT_AUDIT_PATH, DEFAULT_LOOKS_PATH, count_prior_lo
 from verdict.checks import run_all_checks
 from verdict.client.fixture import FixtureClient
 from verdict.client.rest import RestClient
+from verdict.cohort import build_cohort_comparison
 from verdict.config import VerdictThresholds, resolve_env_config
 from verdict.memo import memo_from_verdict
 from verdict.policy import evaluate_verdict
@@ -29,6 +30,7 @@ def render_results_html(
     force_live: bool = False,
     env_name: str = "simulation",
     fixtures_dir: Path = Path("data/fixtures"),
+    db_path: Path | None = None,
     looks_path: Path = DEFAULT_LOOKS_PATH,
     audit_path: Path = DEFAULT_AUDIT_PATH,
     planned_sample: int = 200,
@@ -38,7 +40,8 @@ def render_results_html(
     """Evaluate `experiment_arg` and return rendered static HTML."""
     current = now or datetime.now(UTC)
     fixture_exists = (fixtures_dir / f"{Path(experiment_arg).name}.json").exists()
-    if use_fixture or (not force_live and fixture_exists):
+    is_fixture = use_fixture or (not force_live and fixture_exists)
+    if is_fixture:
         client: Any = FixtureClient(fixtures_dir=fixtures_dir)
     else:
         if env_name.strip().lower() == "production" and current < FREEZE_UTC and not allow_pre_freeze:
@@ -54,6 +57,8 @@ def render_results_html(
             planned_sample=planned_sample,
             simulated=simulated,
         )
+        if db_path is None:
+            db_path = Path("data/quiz.db")
 
     try:
         experiment = client.get_experiment(experiment_arg)
@@ -68,7 +73,15 @@ def render_results_html(
     prior_looks = count_prior_looks(experiment.id, looks_path=looks_path)
     checks = run_all_checks(experiment, exposure, results, prior_looks=prior_looks, thresholds=thresholds)
     verdict = evaluate_verdict(experiment, exposure, results, checks, thresholds)
-    memo = memo_from_verdict(experiment, exposure, results, verdict)
+    cohort = build_cohort_comparison(
+        experiment,
+        exposure,
+        verdict,
+        db_path=db_path,
+        prior_looks=prior_looks,
+        thresholds=thresholds,
+    )
+    memo = memo_from_verdict(experiment, exposure, results, verdict, comparison=cohort)
 
     audit_all = read_looks(audit_path, limit=100)
     audit_entries = [a for a in audit_all if str(a.get("id")) == str(experiment.id)]
@@ -83,6 +96,7 @@ def render_results_html(
         exposure=exposure,
         results=results,
         verdict=verdict,
+        cohort=cohort,
         memo=memo,
         audit_entries=audit_entries,
         generated_at=current.strftime("%Y-%m-%d %H:%M UTC"),
@@ -100,6 +114,7 @@ def main() -> int:
         default="simulation",
     )
     parser.add_argument("--fixtures-dir", default="data/fixtures")
+    parser.add_argument("--db-path", default=None)
     parser.add_argument("--looks-path", default=str(DEFAULT_LOOKS_PATH))
     parser.add_argument("--audit-path", default=str(DEFAULT_AUDIT_PATH))
     parser.add_argument("--planned-sample", type=int, default=200)
@@ -114,6 +129,7 @@ def main() -> int:
             force_live=bool(args.live),
             env_name=args.env,
             fixtures_dir=Path(args.fixtures_dir),
+            db_path=Path(args.db_path) if args.db_path else None,
             looks_path=Path(args.looks_path),
             audit_path=Path(args.audit_path),
             planned_sample=int(args.planned_sample),
