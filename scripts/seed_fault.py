@@ -100,6 +100,21 @@ def ensure_simulation_experiment(
     feature_id = int(feature["id"])
     mv_options = feature.get("multivariate_options") or []
     mv_opt_id = int(mv_options[0]["id"])
+    # Flagsmith ignores `key` on feature creation; set it via the dedicated mv-options endpoint.
+    if not mv_options[0].get("key"):
+        patch_opt = client.patch(
+            f"{base}/api/v1/projects/{project_id}/features/{feature_id}/mv-options/{mv_opt_id}/",
+            json={
+                "feature": feature_id,
+                "type": mv_options[0].get("type", "unicode"),
+                "string_value": mv_options[0].get("string_value", "variant"),
+                "default_percentage_allocation": float(
+                    mv_options[0].get("default_percentage_allocation") or 0.0
+                ),
+                "key": "variant",
+            },
+        )
+        patch_opt.raise_for_status()
 
     # 4. Find or create metrics
     exp_metrics_url = f"{base}/api/v1/environments/{sim_env_key}/experiment-metrics/"

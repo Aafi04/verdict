@@ -118,8 +118,8 @@ def main() -> int:
             client,
             base_url=base_url,
             sim_env_key=sim_key,
-            flag_name="seeded_clear_win_demo",
-            exp_name="seeded_clear_win_sim",
+            flag_name="seeded_clear_win_demo_v2",
+            exp_name="seeded_clear_win_sim_v2",
             hypothesis="[SIMULATED CLEAR WIN] Demonstrate Verdict SHIP + approved apply + rollback.",
             metrics_spec=[
                 {
@@ -138,6 +138,7 @@ def main() -> int:
     sent = emit_clear_win_traffic(
         base_url=base_url,
         sim_env_key=sim_key,
+        flag_name="seeded_clear_win_demo_v2",
         total_visitors=args.total,
         seed=args.seed,
     )

@@ -446,9 +446,10 @@ def layer7_integrity() -> bool:
     status = data.get("integrity_status", "UNKNOWN")
 
     # Safe subset to display — never print conversion rates, lifts, intervals
-    fs = data.get("flagsmith_exposures", {})
-    sq = data.get("sqlite_exposures", {})
-    cd = data.get("count_diff", {})
+    fs = data.get("flagsmith_exposures") or {}
+    sq = data.get("sqlite_exposures") or {}
+    cd = data.get("count_diff") or {}
+    as_of = fs.get("as_of") or data.get("as_of") or "?"
 
     safe_summary = (
         f"integrity={status} | "
@@ -463,7 +464,6 @@ def layer7_integrity() -> bool:
         return True
 
     if status == "STALE_SNAPSHOT":
-        as_of = data.get("as_of", "?")
         emit(7, "SKIP", f"STALE_SNAPSHOT (as_of={as_of}) — wait 5 min and re-run")
         return True  # not a hard failure
 

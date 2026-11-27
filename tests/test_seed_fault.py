@@ -46,6 +46,8 @@ def test_ensure_seeded_fault_creates_flag_metric_and_experiment() -> None:
                 201,
                 json={"id": 4, "name": "seeded_fault_demo", "multivariate_options": [{"id": 15}]},
             )
+        if path == "/api/v1/projects/1/features/4/mv-options/15/" and request.method == "PATCH":
+            return httpx.Response(200, json={"id": 15, "key": "variant"})
         if path == "/api/v1/environments/sim-key/experiment-metrics/":
             if request.method == "GET":
                 return httpx.Response(200, json={"results": []})

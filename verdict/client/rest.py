@@ -403,7 +403,9 @@ class RestClient:
                 "multivariate_feature_state_values"
             ],
         }
-        resp = self._client.patch(
+        # Use PUT (not PATCH): BaseFeatureStateViewSet maps update (PUT) to FeatureStateSerializerBasic,
+        # whereas partial_update (PATCH) falls through to FeatureStateSerializerCreate and drops mv weights.
+        resp = self._client.put(
             f"{self.base_url}/api/v1/environments/{self.env_key}/featurestates/{fs_id}/",
             json=patch_body,
         )

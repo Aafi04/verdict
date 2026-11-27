@@ -331,7 +331,7 @@ def test_rollback_dry_run_and_execute(tmp_path: Path, monkeypatch, capsys) -> No
                     ]
                 },
             )
-        if path.endswith("/featurestates/99/") and request.method == "PATCH":
+        if path.endswith("/featurestates/99/") and request.method == "PUT":
             return httpx.Response(
                 200,
                 json={
@@ -359,16 +359,16 @@ def test_rollback_dry_run_and_execute(tmp_path: Path, monkeypatch, capsys) -> No
     rc_dry = main(["rollback", "7", "--env", "simulation", "--audit-path", str(audit_path)])
     assert rc_dry == 0
     assert "DRY-RUN ONLY" in capsys.readouterr().out
-    assert not any(m == "PATCH" for m, _, _ in calls)
+    assert not any(m == "PUT" for m, _, _ in calls)
 
-    # Execute with typed approval runs PATCH and writes audit log
+    # Execute with typed approval runs PUT and writes audit log
     monkeypatch.setattr("builtins.input", lambda _p: "ROLLBACK 7 result_view")
     rc_exec = main(
         ["rollback", "7", "--env", "simulation", "--execute", "--audit-path", str(audit_path)]
     )
     assert rc_exec == 0
     assert "ROLLED BACK:" in capsys.readouterr().out
-    assert any(m == "PATCH" and path.endswith("/featurestates/99/") for m, path, _ in calls)
+    assert any(m == "PUT" and path.endswith("/featurestates/99/") for m, path, _ in calls)
     rb_entry = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
     assert rb_entry["action"] == "rollback"
     assert rb_entry["approver"] == "human-typed"
