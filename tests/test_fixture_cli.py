@@ -31,6 +31,7 @@ def test_cli_check_on_all_fixtures_offline(tmp_path: Path, capsys, monkeypatch) 
                 "data/fixtures",
                 "--looks-path",
                 str(looks_file),
+                "--plain",
             ]
         )
         assert rc == 0

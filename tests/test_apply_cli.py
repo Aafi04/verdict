@@ -142,6 +142,7 @@ def test_apply_ship_fixture_dry_run_default(tmp_path: Path, capsys) -> None:
             str(tmp_path / "looks.jsonl"),
             "--audit-path",
             str(audit_path),
+            "--plain",
         ]
     )
     assert rc == 0
@@ -279,6 +280,7 @@ def test_apply_execute_succeeds_and_writes_audit_log(
             str(looks_path),
             "--audit-path",
             str(audit_path),
+            "--plain",
         ]
     )
     assert rc == 0
@@ -355,8 +357,8 @@ def test_rollback_dry_run_and_execute(tmp_path: Path, monkeypatch, capsys) -> No
     monkeypatch.setattr(RestClient, "__init__", patched_init)
     audit_path = tmp_path / "audit.jsonl"
 
-    # Dry-run makes no PATCH writes
-    rc_dry = main(["rollback", "7", "--env", "simulation", "--audit-path", str(audit_path)])
+    # Dry-run makes no PUT writes
+    rc_dry = main(["rollback", "7", "--env", "simulation", "--audit-path", str(audit_path), "--plain"])
     assert rc_dry == 0
     assert "DRY-RUN ONLY" in capsys.readouterr().out
     assert not any(m == "PUT" for m, _, _ in calls)
@@ -364,7 +366,16 @@ def test_rollback_dry_run_and_execute(tmp_path: Path, monkeypatch, capsys) -> No
     # Execute with typed approval runs PUT and writes audit log
     monkeypatch.setattr("builtins.input", lambda _p: "ROLLBACK 7 result_view")
     rc_exec = main(
-        ["rollback", "7", "--env", "simulation", "--execute", "--audit-path", str(audit_path)]
+        [
+            "rollback",
+            "7",
+            "--env",
+            "simulation",
+            "--execute",
+            "--audit-path",
+            str(audit_path),
+            "--plain",
+        ]
     )
     assert rc_exec == 0
     assert "ROLLED BACK:" in capsys.readouterr().out

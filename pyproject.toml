@@ -25,6 +25,9 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.6.0",
 ]
+cli = [
+    "rich==13.9.4",
+]
 
 [project.scripts]
 verdict = "verdict.cli:main"

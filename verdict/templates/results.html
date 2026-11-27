@@ -3,241 +3,722 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verdict Results — {{ experiment.name }}</title>
+  <title>Verdict — {{ experiment.name }} ({{ page_label }})</title>
   <style>
     :root {
-      --bg: #f6f5f1;
-      --surface: #ffffff;
-      --ink: #17191c;
-      --muted: #5a6069;
-      --border: #dfdcd3;
-      --ship-bg: #14532d;
-      --ship-soft: #dcfce7;
-      --hold-bg: #92400e;
-      --hold-soft: #fef3c7;
-      --reject-bg: #991b1b;
-      --reject-soft: #fee2e2;
-      --warn-bg: #7c2d12;
-      --warn-soft: #ffedd5;
+      --canvas: #0d1117;
+      --panel: #161b22;
+      --panel-alt: #1c222b;
+      --border: #2b3340;
+      --ink: #f0f6fc;
+      --muted: #9ba5b4;
+      --ship: #10b981;
+      --ship-soft: rgba(16, 185, 129, 0.14);
+      --hold: #f59e0b;
+      --hold-soft: rgba(245, 158, 11, 0.14);
+      --reject: #ef4444;
+      --reject-soft: rgba(239, 68, 68, 0.16);
+      --info: #38bdf8;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
+
     * { box-sizing: border-box; }
+
     body {
       margin: 0;
-      font-family: var(--sans);
-      background: var(--bg);
+      background: var(--canvas);
       color: var(--ink);
+      font-family: var(--sans);
+      font-size: 17px;
       line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
     }
-    .wrap { max-width: 860px; margin: 0 auto; padding: 28px 18px 56px; }
+
+    code {
+      font-family: var(--mono);
+      font-size: 0.88em;
+      background: #0b0f14;
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 5px;
+      color: #dbeafe;
+      word-break: break-word;
+    }
+
+    /* Persistent top ribbon */
+    .ribbon {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: #1f1708;
+      border-bottom: 2px solid var(--hold);
+      color: #fde68a;
+      padding: 10px 20px;
+      font-size: 0.94rem;
+    }
+    .ribbon-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+    }
+    .ribbon-tag {
+      background: var(--hold);
+      color: #111317;
+      font-family: var(--mono);
+      font-weight: 800;
+      font-size: 0.8rem;
+      padding: 3px 9px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 28px 20px 64px;
+    }
+
     .topbar {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 22px;
+      color: var(--muted);
+      font-size: 0.92rem;
     }
-    .brand { font-weight: 700; font-size: 1.05rem; }
-    .meta { color: var(--muted); font-size: 0.88rem; font-family: var(--mono); }
+    .brand {
+      color: var(--ink);
+      font-weight: 700;
+      font-size: 1.05rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .env-chip {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--info);
+    }
+
+    /* Hero */
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 28px 30px;
+      margin-bottom: 22px;
+    }
+    .hero-SHIP { border-left: 6px solid var(--ship); }
+    .hero-HOLD { border-left: 6px solid var(--hold); }
+    .hero-REJECT { border-left: 6px solid var(--reject); }
+
+    .hero-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .verdict-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 22px;
+      border-radius: 10px;
+      font-family: var(--mono);
+      font-weight: 800;
+      font-size: 1.85rem;
+      letter-spacing: 0.02em;
+    }
+    .badge-SHIP { background: var(--ship-soft); color: var(--ship); border: 1px solid var(--ship); }
+    .badge-HOLD { background: var(--hold-soft); color: var(--hold); border: 1px solid var(--hold); }
+    .badge-REJECT { background: var(--reject-soft); color: var(--reject); border: 1px solid var(--reject); }
+
+    .small-badge {
+      display: inline-block;
+      padding: 4px 11px;
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    .hero h1 {
+      margin: 14px 0 8px;
+      font-size: 2rem;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+    .hero-reason {
+      margin: 0;
+      font-size: 1.2rem;
+      color: var(--ink);
+    }
+    .hero-sub {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+
+    .section-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin: 30px 0 14px;
+      letter-spacing: -0.01em;
+    }
+
+    /* Evidence grid */
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
     .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 22px; margin-bottom: 18px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 24px;
     }
-    .banner-sim {
-      background: var(--warn-soft); color: var(--warn-bg);
-      border: 1px solid #fdba74; border-radius: 8px;
-      padding: 10px 14px; font-weight: 600; margin-bottom: 18px;
+    .card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
     }
-    .badge {
-      display: inline-block; padding: 5px 12px; border-radius: 6px;
-      font-family: var(--mono); font-weight: 700; font-size: 0.95rem;
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--ink);
     }
-    .badge-SHIP { background: var(--ship-soft); color: var(--ship-bg); }
-    .badge-HOLD { background: var(--hold-soft); color: var(--hold-bg); }
-    .badge-REJECT { background: var(--reject-soft); color: var(--reject-bg); }
-    .status-PASS { color: var(--ship-bg); font-weight: 700; }
-    .status-HOLD { color: var(--hold-bg); font-weight: 700; }
-    .status-WARN { color: var(--warn-bg); font-weight: 700; }
-    .status-FAIL { color: var(--reject-bg); font-weight: 700; }
-    h1, h2 { margin-top: 0; letter-spacing: -0.01em; }
-    h1 { font-size: 1.45rem; margin-bottom: 8px; }
-    h2 { font-size: 1.1rem; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.03em; }
-    code { font-family: var(--mono); font-size: 0.88em; background: #f1efe7; padding: 1px 5px; border-radius: 4px; }
-    ul { margin: 8px 0 0; padding-left: 20px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
-    .stat { background: #faf9f5; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
-    .stat-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; }
-    .stat-val { font-size: 1.15rem; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
+    .card-meta {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .big-stat {
+      font-family: var(--mono);
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+    .stat-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px 24px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+    .stat-row strong {
+      color: var(--ink);
+      font-family: var(--mono);
+    }
+
+    /* Horizontal CI bar with vertical 0 line */
+    .ci-wrap {
+      margin-top: 16px;
+      padding: 12px 14px;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .ci-track {
+      position: relative;
+      height: 28px;
+      background: #0b0f14;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .ci-zero {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #94a3b8;
+      z-index: 2;
+    }
+    .ci-range {
+      position: absolute;
+      top: 7px;
+      height: 14px;
+      border-radius: 4px;
+      z-index: 1;
+    }
+    .ci-favourable { background: var(--ship); }
+    .ci-regressed { background: var(--reject); }
+    .ci-uncertain { background: var(--hold); }
+    .ci-point {
+      position: absolute;
+      top: 4px;
+      width: 4px;
+      height: 20px;
+      background: #ffffff;
+      border-radius: 2px;
+      z-index: 3;
+      transform: translateX(-50%);
+    }
+    .ci-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      color: var(--muted);
+    }
+    .ci-labels strong { color: var(--ink); }
+
+    /* Sample bar */
+    .prog-track {
+      height: 14px;
+      background: #0b0f14;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 14px;
+    }
+    .prog-fill {
+      height: 100%;
+      background: var(--info);
+    }
+
+    /* Checks timeline */
+    .timeline {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .check-item {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: 92px 210px 1fr;
+      align-items: center;
+      gap: 10px 16px;
+    }
+    .check-item.is-FAIL {
+      background: rgba(239, 68, 68, 0.11);
+      border-color: var(--reject);
+      border-left: 5px solid var(--reject);
+      padding: 18px 20px;
+    }
+    .check-item.is-HOLD {
+      background: rgba(245, 158, 11, 0.10);
+      border-color: var(--hold);
+      border-left: 5px solid var(--hold);
+      padding: 18px 20px;
+    }
+    .check-item.is-WARN {
+      border-left: 4px solid var(--hold);
+    }
+    .status-pill {
+      display: inline-block;
+      text-align: center;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-weight: 800;
+      font-size: 0.82rem;
+    }
+    .pill-PASS { background: var(--ship-soft); color: var(--ship); }
+    .pill-HOLD { background: var(--hold-soft); color: var(--hold); }
+    .pill-WARN { background: var(--hold-soft); color: var(--hold); }
+    .pill-FAIL { background: var(--reject-soft); color: var(--reject); }
+    .check-name {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.96rem;
+    }
+    .check-detail {
+      color: var(--ink);
+      font-size: 0.96rem;
+    }
+    .check-expanded {
+      grid-column: 1 / -1;
+      margin-top: 4px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      color: #fecaca;
+      font-size: 0.94rem;
+    }
+    .check-item.is-HOLD .check-expanded {
+      color: #fde68a;
+    }
+
+    /* Cohort panel */
+    .cohort-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .toggle-btn {
+      background: var(--panel);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .toggle-btn.active {
+      background: #1f2937;
+      color: var(--ink);
+      border-color: var(--info);
+    }
+    .cohort-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .cohort-grid.focus-single {
+      grid-template-columns: 1fr;
+    }
+    .disagree-box {
+      margin-bottom: 16px;
+      background: rgba(239, 68, 68, 0.14);
+      border: 1px solid var(--reject);
+      border-left: 5px solid var(--reject);
+      border-radius: 10px;
+      padding: 16px 20px;
+      color: #fecaca;
+      font-weight: 600;
+    }
+
+    /* Human approval panel */
+    .approval-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--info);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .cmd-box {
+      background: #0b0f14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-family: var(--mono);
+      font-size: 0.92rem;
+      color: #e2e8f0;
+      margin: 12px 0;
+      overflow-x: auto;
+    }
+    .autonomy-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .autonomy-box {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 0.92rem;
+    }
+
+    .footer {
+      margin-top: 34px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 22px;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 760px) {
+      body { font-size: 16px; }
+      .evidence-grid, .cohort-grid, .autonomy-grid {
+        grid-template-columns: 1fr;
+      }
+      .check-item {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+      .hero { padding: 20px 18px; }
+      .hero h1 { font-size: 1.55rem; }
+      .verdict-badge { font-size: 1.45rem; padding: 8px 16px; }
+    }
   </style>
 </head>
 <body>
+  {% if experiment.simulated or cohort.synthetic_n > 0 %}
+  <div class="ribbon">
+    <div class="ribbon-inner">
+      <span class="ribbon-tag">SYNTHETIC DATA</span>
+      <span><strong>Synthetic data:</strong> {{ cohort.synthetic_n }} synthetic (<code>sim-</code>, <code>synthetic=1</code>) + {{ cohort.real_n }} real exposures, generated by <code>quiz/simulate.py</code> from fixed parameters (commit <code>69b712a</code>); shows Verdict works on this pipeline, and is not evidence about human behaviour.</span>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="wrap">
     <div class="topbar">
-      <div class="brand">Verdict — Experiment Evaluation Report</div>
-      <div class="meta">generated {{ generated_at }}</div>
+      <div class="brand">
+        <span>Verdict Experiment Evaluation</span>
+        <span class="env-chip">{{ page_label }}</span>
+      </div>
+      <div>Generated {{ generated_at }}</div>
     </div>
 
-    {% if experiment.simulated or cohort.synthetic_n > 0 %}
-    <div class="banner-sim">
-      <strong>Synthetic data:</strong> This dataset is primarily synthetic (<code>sim-</code> identities in Flagsmith, <code>synthetic=1</code> in SQLite/exports; {{ cohort.synthetic_n }} synthetic / {{ cohort.combined_n }} combined), generated by <code>quiz/simulate.py</code> from fixed documented parameters (commit <code>69b712a</code>). It shows that Verdict works on this pipeline, and is not evidence about human behaviour. Real-only results ({{ cohort.real_n }} exposures) are shown alongside the combined result.
-    </div>
-    {% endif %}
-
-    {% if cohort.disagreement %}
-    <div class="banner-sim" style="background: var(--reject-soft); color: var(--reject-bg); border-color: #fca5a5;">
-      {{ cohort.disagreement_detail }}
-    </div>
-    {% endif %}
-
-    <section class="card">
-      <span class="badge badge-{{ verdict.verdict }}">COMBINED VERDICT: {{ verdict.verdict }}</span>
-      <span class="badge badge-{{ cohort.real_only_verdict.verdict }}" style="margin-left: 8px;">REAL-ONLY VERDICT: {{ cohort.real_only_verdict.verdict }}</span>
-      <h1 style="margin-top: 12px;">{{ experiment.name }}</h1>
+    <section class="hero hero-{{ verdict.verdict }}">
+      <div class="hero-top">
+        <span class="verdict-badge badge-{{ verdict.verdict }}">COMBINED VERDICT: {{ verdict.verdict }}</span>
+        <span class="small-badge badge-{{ cohort.real_only_verdict.verdict }}">REAL-ONLY VERDICT: {{ cohort.real_only_verdict.verdict }}</span>
+      </div>
+      <h1>{{ experiment.name }}</h1>
+      <p class="hero-reason">{{ memo.summary }}</p>
       {% if experiment.hypothesis %}
-      <p><strong>Hypothesis:</strong> {{ experiment.hypothesis }}</p>
+      <p class="hero-sub">Hypothesis: {{ experiment.hypothesis }}</p>
       {% endif %}
-      <p>{{ memo.summary }}</p>
+    </section>
 
-      <div class="grid">
-        <div class="stat">
-          <div class="stat-label">Combined N / Planned</div>
-          <div class="stat-val">{{ cohort.combined_n }} / {{ experiment.planned_sample }}</div>
+    <h2 class="section-title">Evidence</h2>
+    <div class="evidence-grid">
+      <article class="card">
+        <div class="card-head">
+          <span class="card-title">Primary: {{ primary_card.name }}</span>
+          <span class="card-meta">dir={{ primary_card.direction }}</span>
         </div>
-        <div class="stat">
-          <div class="stat-label">Real N (synthetic=0)</div>
-          <div class="stat-val">{{ cohort.real_n }}</div>
+        <div class="big-stat">{{ primary_card.lift_str }}</div>
+        <div class="stat-row">
+          <span>Win prob: <strong>{{ primary_card.win_prob_str }}</strong></span>
+          <span>Control: <strong>{{ primary_card.control_str }}</strong></span>
+          <span>Variant: <strong>{{ primary_card.variant_str }}</strong></span>
         </div>
-        <div class="stat">
-          <div class="stat-label">Synthetic N (sim-)</div>
-          <div class="stat-val">{{ cohort.synthetic_n }}</div>
+        {% if primary_card.bar %}
+        <div class="ci-wrap">
+          <div class="ci-track" aria-label="Primary 95% interval">
+            <div class="ci-zero" style="left: {{ primary_card.bar.zero_pct }}%;"></div>
+            <div class="ci-range ci-{{ primary_card.bar.tone }}" style="left: {{ primary_card.bar.left_pct }}%; width: {{ primary_card.bar.width_pct }}%;"></div>
+            {% if primary_card.bar.point_pct is not none %}
+            <div class="ci-point" style="left: {{ primary_card.bar.point_pct }}%;"></div>
+            {% endif %}
+          </div>
+          <div class="ci-labels">
+            <span>Low: <strong>{{ primary_card.bar.low_label }}</strong></span>
+            <span>0 line</span>
+            <span>High: <strong>{{ primary_card.bar.high_label }}</strong></span>
+          </div>
         </div>
-        <div class="stat">
-          <div class="stat-label">Verdict Hash</div>
-          <div class="stat-val">{{ verdict.verdict_hash[:12] }}</div>
+        {% else %}
+        <div class="ci-wrap"><span class="card-meta">95% CI: {{ primary_card.ci_str }}</span></div>
+        {% endif %}
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <span class="card-title">Guardrail: {{ guardrail_card.name }}</span>
+          <span class="card-meta">dir={{ guardrail_card.direction }}</span>
+        </div>
+        <div class="big-stat">{{ guardrail_card.effect_str }}</div>
+        <div class="stat-row">
+          <span>Control: <strong>{{ guardrail_card.control_str }}</strong></span>
+          <span>Variant: <strong>{{ guardrail_card.variant_str }}</strong></span>
+          <span>95% CI: <strong>{{ guardrail_card.ci_str }}</strong></span>
+        </div>
+        {% if guardrail_card.bar %}
+        <div class="ci-wrap">
+          <div class="ci-track" aria-label="Guardrail 95% interval">
+            <div class="ci-zero" style="left: {{ guardrail_card.bar.zero_pct }}%;"></div>
+            <div class="ci-range ci-{{ guardrail_card.bar.tone }}" style="left: {{ guardrail_card.bar.left_pct }}%; width: {{ guardrail_card.bar.width_pct }}%;"></div>
+            {% if guardrail_card.bar.point_pct is not none %}
+            <div class="ci-point" style="left: {{ guardrail_card.bar.point_pct }}%;"></div>
+            {% endif %}
+          </div>
+          <div class="ci-labels">
+            <span>Low: <strong>{{ guardrail_card.bar.low_label }}</strong></span>
+            <span>0 line</span>
+            <span>High: <strong>{{ guardrail_card.bar.high_label }}</strong></span>
+          </div>
+        </div>
+        {% else %}
+        <div class="ci-wrap"><span class="card-meta">{{ guardrail_card.ci_str }}</span></div>
+        {% endif %}
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <span class="card-title">Sample Reached</span>
+          <span class="card-meta">{{ sample_pct }}% of planned</span>
+        </div>
+        <div class="big-stat">{{ exposure.total }} / {{ experiment.planned_sample }}</div>
+        <div class="prog-track">
+          <div class="prog-fill" style="width: {{ sample_pct }}%;"></div>
+        </div>
+        <div class="stat-row">
+          {% for arm in arms_breakdown %}
+          <span>{{ arm.arm }}: <strong>{{ arm.count }} ({{ arm.pct }}%)</strong></span>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <span class="card-title">Sample Ratio Mismatch (SRM)</span>
+          <span class="status-pill pill-{{ srm_card.status }}">{{ srm_card.status }}</span>
+        </div>
+        <div class="big-stat">p = {{ srm_card.verdict_p }}</div>
+        <div class="stat-row">
+          <span>Verdict chi2: <strong>{{ srm_card.verdict_p }}</strong></span>
+          <span>Flagsmith SRM: <strong>{{ srm_card.flagsmith_p }}</strong></span>
+        </div>
+        <p class="hero-sub" style="margin-top: 10px;">{{ srm_card.detail }}</p>
+      </article>
+    </div>
+
+    <h2 class="section-title">Checks Timeline ({{ verdict.checks|length }} deterministic checks)</h2>
+    <ul class="timeline">
+      {% for chk in verdict.checks %}
+      <li class="check-item is-{{ chk.status }}">
+        <span class="status-pill pill-{{ chk.status }}">{{ chk.status }}</span>
+        <span class="check-name">{{ chk.name }}</span>
+        <span class="check-detail">{{ chk.detail }}</span>
+        {% if chk.status in ("FAIL", "HOLD") %}
+        <div class="check-expanded">
+          {% if chk.status == "FAIL" %}
+          Blocking fault: policy stops at REJECT and refuses rollout proposals.
+          {% else %}
+          Holding condition: waiting until sample and interval criteria pass before shipping.
+          {% endif %}
+        </div>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+
+    <h2 class="section-title">Cohort Comparison (Combined vs Real-Only)</h2>
+    {% if cohort.disagreement %}
+    <div class="disagree-box">
+      {{ cohort.disagreement_detail }} Synthetic data drove the combined total; real-only responses alone do not justify shipping.
+    </div>
+    {% endif %}
+
+    <div class="cohort-controls">
+      <button type="button" class="toggle-btn active" data-cohort-view="both">Side by side</button>
+      <button type="button" class="toggle-btn" data-cohort-view="combined">Combined only (N={{ cohort.combined_n }})</button>
+      <button type="button" class="toggle-btn" data-cohort-view="real">Real-only (N={{ cohort.real_n }})</button>
+    </div>
+
+    <div class="cohort-grid" id="cohortGrid">
+      <article class="card" id="cohortCombinedCard">
+        <div class="card-head">
+          <span class="card-title">Combined Cohort (Real + Synthetic)</span>
+          <span class="small-badge badge-{{ verdict.verdict }}">{{ verdict.verdict }}</span>
+        </div>
+        <div class="big-stat">N = {{ cohort.combined_n }}</div>
+        <div class="stat-row">
+          <span>Real: <strong>{{ cohort.real_n }}</strong></span>
+          <span>Synthetic: <strong>{{ cohort.synthetic_n }}</strong></span>
+        </div>
+        <ul>
+          {% for r in verdict.reasons %}
+          <li>{{ r }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+
+      <article class="card" id="cohortRealCard">
+        <div class="card-head">
+          <span class="card-title">Real-Only Cohort (synthetic=0)</span>
+          <span class="small-badge badge-{{ cohort.real_only_verdict.verdict }}">{{ cohort.real_only_verdict.verdict }}</span>
+        </div>
+        <div class="big-stat">N = {{ cohort.real_n }}</div>
+        <div class="stat-row">
+          {% for arm, cnt in cohort.real_only_exposure.counts.items() %}
+          <span>{{ arm }}: <strong>{{ cnt }}</strong></span>
+          {% endfor %}
+        </div>
+        <ul>
+          {% for r in cohort.real_only_verdict.reasons %}
+          <li>{{ r }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </div>
+
+    <h2 class="section-title">Human Approval Required</h2>
+    <section class="approval-panel">
+      <p style="margin-top: 0;"><strong>No Flagsmith state has been modified automatically.</strong> Verdict is read-only and dry-run by default.</p>
+      <p><strong>What <code>verdict apply</code> proposes:</strong> {{ proposed_description }}</p>
+      {% if proposed_payload_json %}
+      <div class="cmd-box">Payload: {{ proposed_payload_json }}</div>
+      {% endif %}
+      <div class="cmd-box">Command: {{ approval_cmd }}<br>Exact phrase to type: {{ approval_phrase }}</div>
+
+      <div class="autonomy-grid">
+        <div class="autonomy-box">
+          <strong>Autonomy Boundary — Verdict does automatically</strong>
+          <p style="margin: 6px 0 0; color: var(--muted);">Read exposures and results, run deterministic checks, log looks, and render static reports.</p>
+        </div>
+        <div class="autonomy-box">
+          <strong>Autonomy Boundary — Requires typed human approval</strong>
+          <p style="margin: 6px 0 0; color: var(--muted);">Any Flagsmith flag change or rollout requires <code>--execute</code> plus exact typed confirmation <code>{{ approval_phrase }}</code>.</p>
         </div>
       </div>
 
-      <p class="meta" style="margin-top: 10px;">
-        Experiment ID {{ experiment.id }} ({{ experiment.feature_name }}) | Data as of: {{ results.as_of or exposure.as_of or "n/a" }}
-      </p>
-
-      {% if cohort.real_only_verdict.reasons %}
-      <h2 style="margin-top: 16px;">Real-Only Cohort Summary (N={{ cohort.real_n }})</h2>
-      <ul>
-        {% for reason in cohort.real_only_verdict.reasons %}
-        <li>{{ reason }}</li>
-        {% endfor %}
-      </ul>
-      {% endif %}
-
-      {% if verdict.reasons %}
-      <h2 style="margin-top: 18px;">Combined Verdict Reasons (N={{ cohort.combined_n }})</h2>
-      <ul>
-        {% for reason in verdict.reasons %}
-        <li>{{ reason }}</li>
-        {% endfor %}
-      </ul>
-      {% endif %}
-      <p style="margin-top: 14px;"><strong>Next action:</strong> <code>{{ verdict.next_action }}</code></p>
-    </section>
-
-    <section class="card">
-      <h2>Exposures &amp; Metrics</h2>
-      <p class="meta">
-        Split:
-        {% for arm, count in exposure.counts.items() %}
-          {{ arm }}={{ count }}{% if not loop.last %}, {% endif %}
-        {% endfor %}
-        {% if results.srm_p_value is not none %} | Flagsmith srm_p_value={{ "%.4g"|format(results.srm_p_value) }}{% endif %}
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Metric</th>
-            <th>Role</th>
-            <th>Control</th>
-            <th>Variant</th>
-            <th>Rel. Lift</th>
-            <th>95% CI</th>
-            <th>Win Prob</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for m in results.metrics %}
-          <tr>
-            <td><strong>{{ m.name }}</strong><br><span class="meta">{{ m.expected_direction }}</span></td>
-            <td>{{ m.role }}</td>
-            <td>{{ m.control_events }} / {{ m.control_n }} ({{ "%.1f%%"|format((m.control_events / m.control_n * 100) if m.control_n else 0) }})</td>
-            <td>{{ m.variant_events }} / {{ m.variant_n }} ({{ "%.1f%%"|format((m.variant_events / m.variant_n * 100) if m.variant_n else 0) }})</td>
-            <td>{% if m.relative_lift is not none %}{{ "%+.1f%%"|format(m.relative_lift * 100) }}{% else %}pending{% endif %}</td>
-            <td>{% if m.interval is not none %}[{{ "%+.1f%%"|format(m.interval.low * 100) }}, {{ "%+.1f%%"|format(m.interval.high * 100) }}]{% else %}pending{% endif %}</td>
-            <td>{% if m.win_probability is not none %}{{ "%.1f%%"|format(m.win_probability * 100) }}{% else %}pending{% endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </section>
-
-    <section class="card">
-      <h2>Deterministic Checks</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Check</th>
-            <th>Status</th>
-            <th>Detail</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for chk in verdict.checks %}
-          <tr>
-            <td><code>{{ chk.name }}</code></td>
-            <td class="status-{{ chk.status }}">{{ chk.status }}</td>
-            <td>{{ chk.detail }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </section>
-
-    <section class="card">
-      <h2>Autonomy Boundary &amp; Audit Trail</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Verdict does automatically</th>
-            <th>Verdict never does without typed human approval</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Read exposures &amp; results, compute SRM &amp; policy verdict deterministically, log looks, render static report.</td>
-            <td>Change flag state, allocation, or promote a variant. Requires <code>verdict apply --execute</code> + exact <code>APPROVE &lt;id&gt; &lt;hash8&gt;</code>.</td>
-          </tr>
-        </tbody>
-      </table>
       {% if audit_entries %}
-      <h2 style="margin-top: 16px;">Recorded Approvals (<code>audit.jsonl</code>)</h2>
+      <p style="margin: 16px 0 6px;"><strong>Recorded Approvals (<code>audit.jsonl</code>)</strong></p>
       <ul>
         {% for item in audit_entries %}
-        <li><code>{{ item.ts }}</code> — {{ item.approver }} applied <code>{{ item.verdict_hash[:12] }}</code>: {{ item.change.description if item.change else "" }}</li>
+        <li><code>{{ item.ts }}</code> — {{ item.approver }} ({{ item.action or "apply" }}) <code>{{ item.verdict_hash[:12] if item.verdict_hash else "" }}</code>: {{ item.change.description if item.change else "" }}</li>
         {% endfor %}
       </ul>
       {% else %}
-      <p class="meta" style="margin-top: 12px;">No flag mutations recorded for this experiment.</p>
+      <p class="card-meta" style="margin: 14px 0 0;">No flag mutations recorded for this experiment.</p>
       {% endif %}
     </section>
 
-    <section class="card">
-      <h2>Known Limitations</h2>
-      <ul>
-        <li>Respondents are primarily developers from hackathon/community channels (selection bias).</li>
-        <li>Quiz scenarios are fixed and fictional; real production release judgment may differ.</li>
-        <li>Short collection window can yield wide credible intervals (reported honestly as HOLD if inconclusive).</li>
-        <li>Verdict evaluates its own Track 1 experiment; all policy thresholds and deterministic checks are published in open code.</li>
-      </ul>
-    </section>
+    <footer class="footer">
+      <span>experiment_id={{ experiment.id }}</span>
+      <span>verdict_hash={{ verdict.verdict_hash }}</span>
+      <span>freeze_utc={{ freeze_utc }}</span>
+      <span>tag={{ data_tag }}</span>
+      <span>commit={{ commit_hash }}</span>
+    </footer>
   </div>
+
+  <script>
+    (function () {
+      var btns = document.querySelectorAll("[data-cohort-view]");
+      var grid = document.getElementById("cohortGrid");
+      var combined = document.getElementById("cohortCombinedCard");
+      var real = document.getElementById("cohortRealCard");
+      if (!btns.length || !grid || !combined || !real) return;
+      btns.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var mode = btn.getAttribute("data-cohort-view");
+          btns.forEach(function (b) { b.classList.toggle("active", b === btn); });
+          combined.classList.toggle("hidden", mode === "real");
+          real.classList.toggle("hidden", mode === "combined");
+          grid.classList.toggle("focus-single", mode !== "both");
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

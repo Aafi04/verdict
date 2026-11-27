@@ -86,6 +86,7 @@ def test_cli_text_memo_no_disagreement_when_real_and_combined_both_hold(
             str(db_path),
             "--looks-path",
             str(tmp_path / "looks.jsonl"),
+            "--plain",
         ]
     )
     assert rc == 0

@@ -28,6 +28,11 @@ from verdict.config import VerdictThresholds, resolve_env_config
 from verdict.memo import memo_from_verdict, render_memo_text
 from verdict.models import Experiment, ExperimentResults, Exposure, VerdictResult
 from verdict.policy import evaluate_verdict
+from verdict.rich_ui import (
+    render_rich_approval_prompt,
+    render_rich_check,
+    render_rich_execution_result,
+)
 
 
 def _two_proportion_sample_per_arm(baseline: float, mde: float, alpha: float = 0.05) -> int:
@@ -180,7 +185,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2))
     else:
         memo = memo_from_verdict(experiment, exposure, results, verdict, comparison=comparison)
-        print(render_memo_text(memo))
+        if args.plain or not render_rich_check(memo):
+            print(render_memo_text(memo))
     return 0
 
 
@@ -245,14 +251,23 @@ def _cmd_apply(args: argparse.Namespace) -> int:
         change = client.propose_rollout(experiment.id, verdict.winning_arm)
         hash8 = verdict.verdict_hash[:8]
         expected_phrase = f"APPROVE {experiment.id} {hash8}"
+        is_dry_run = (not args.execute) or bool(args.dry_run)
 
-        print(f"VERDICT: SHIP (hash={verdict.verdict_hash[:12]}...)")
-        print(f"Proposed change: {change.description}")
-        print(f"Payload: {json.dumps(change.payload)}")
+        if args.plain or not render_rich_approval_prompt(
+            title="Flagsmith Rollout Approval",
+            verdict=verdict,
+            change=change,
+            expected_phrase=expected_phrase,
+            dry_run=is_dry_run,
+        ):
+            print(f"VERDICT: SHIP (hash={verdict.verdict_hash[:12]}...)")
+            print(f"Proposed change: {change.description}")
+            print(f"Payload: {json.dumps(change.payload)}")
+            if is_dry_run:
+                print("\nDRY-RUN ONLY: no changes written to Flagsmith.")
+                print(f"To execute, re-run with --execute and type: {expected_phrase}")
 
-        if not args.execute or args.dry_run:
-            print("\nDRY-RUN ONLY: no changes written to Flagsmith.")
-            print(f"To execute, re-run with --execute and type: {expected_phrase}")
+        if is_dry_run:
             return 0
 
         if isinstance(client, FixtureClient):
@@ -295,8 +310,11 @@ def _cmd_apply(args: argparse.Namespace) -> int:
             "approver": "human-typed",
         }
         append_audit(audit_entry, audit_path=audit_path)
-        print(f"APPLIED: {json.dumps(apply_result)}")
-        print(f"Audit entry recorded in {audit_path}.")
+        if args.plain or not render_rich_execution_result(
+            "Applied Rollout", apply_result, str(audit_path)
+        ):
+            print(f"APPLIED: {json.dumps(apply_result)}")
+            print(f"Audit entry recorded in {audit_path}.")
         return 0
     finally:
         _close_if_needed(client)
@@ -317,13 +335,22 @@ def _cmd_rollback(args: argparse.Namespace) -> int:
         experiment = client.get_experiment(args.experiment)
         change = client.propose_rollback(experiment.id)
         expected_phrase = f"ROLLBACK {experiment.id} {change.feature_name}"
+        is_dry_run = (not args.execute) or bool(args.dry_run)
 
-        print(f"Proposed rollback: {change.description}")
-        print(f"Payload: {json.dumps(change.payload)}")
+        if args.plain or not render_rich_approval_prompt(
+            title="Flagsmith Rollback Approval",
+            verdict=None,
+            change=change,
+            expected_phrase=expected_phrase,
+            dry_run=is_dry_run,
+        ):
+            print(f"Proposed rollback: {change.description}")
+            print(f"Payload: {json.dumps(change.payload)}")
+            if is_dry_run:
+                print("\nDRY-RUN ONLY: no changes written to Flagsmith.")
+                print(f"To execute, re-run with --execute and type: {expected_phrase}")
 
-        if not args.execute or args.dry_run:
-            print("\nDRY-RUN ONLY: no changes written to Flagsmith.")
-            print(f"To execute, re-run with --execute and type: {expected_phrase}")
+        if is_dry_run:
             return 0
 
         try:
@@ -347,8 +374,11 @@ def _cmd_rollback(args: argparse.Namespace) -> int:
             "approver": "human-typed",
         }
         append_audit(audit_entry, audit_path=audit_path)
-        print(f"ROLLED BACK: {json.dumps(rb_result)}")
-        print(f"Audit entry recorded in {audit_path}.")
+        if args.plain or not render_rich_execution_result(
+            "Rolled Back Feature State", rb_result, str(audit_path)
+        ):
+            print(f"ROLLED BACK: {json.dumps(rb_result)}")
+            print(f"Audit entry recorded in {audit_path}.")
         return 0
     finally:
         _close_if_needed(client)
@@ -374,6 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--db-path", default=None, help="Optional SQLite DB for real vs synthetic split")
     p_check.add_argument("--looks-path", default=str(DEFAULT_LOOKS_PATH))
     p_check.add_argument("--json", action="store_true", help="Print JSON output")
+    p_check.add_argument("--plain", action="store_true", help="Force plain-text output instead of Rich")
 
     p_log = sub.add_parser("log", help="Show recent entries from looks.jsonl or audit.jsonl")
     p_log.add_argument("--looks-path", default=str(DEFAULT_LOOKS_PATH))
@@ -403,6 +434,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_apply.add_argument("--audit-path", default=str(DEFAULT_AUDIT_PATH))
     p_apply.add_argument("--dry-run", action="store_true", help="Explicit dry-run (default behavior)")
     p_apply.add_argument("--execute", action="store_true", help="Execute write after typed human approval")
+    p_apply.add_argument("--plain", action="store_true", help="Force plain-text output instead of Rich")
 
     p_rb = sub.add_parser("rollback", help="Roll back an applied rollout to 100% control (dry-run by default)")
     p_rb.add_argument("experiment", help="Experiment ID or name")
@@ -415,6 +447,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_rb.add_argument("--audit-path", default=str(DEFAULT_AUDIT_PATH))
     p_rb.add_argument("--dry-run", action="store_true", help="Explicit dry-run (default behavior)")
     p_rb.add_argument("--execute", action="store_true", help="Execute rollback after typed human approval")
+    p_rb.add_argument("--plain", action="store_true", help="Force plain-text output instead of Rich")
 
     return parser
 
