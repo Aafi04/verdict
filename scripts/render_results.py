@@ -10,13 +10,12 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from scripts.export_csv import FREEZE_UTC
 from verdict.audit import DEFAULT_AUDIT_PATH, DEFAULT_LOOKS_PATH, count_prior_looks, read_looks
 from verdict.checks import run_all_checks
 from verdict.client.fixture import FixtureClient
 from verdict.client.rest import RestClient
 from verdict.cohort import build_cohort_comparison
-from verdict.config import VerdictThresholds, resolve_env_config
+from verdict.config import FREEZE_UTC, VerdictThresholds, resolve_env_config
 from verdict.memo import memo_from_verdict
 from verdict.policy import evaluate_verdict
 

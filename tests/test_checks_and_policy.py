@@ -170,3 +170,103 @@ def test_prob_vs_interval_guardrail_sample_and_looks() -> None:
     ).status == "HOLD"
     assert check_looks(prior_looks=2, sample_reached=False).status == "WARN"
     assert check_looks(prior_looks=2, sample_reached=True).status == "PASS"
+
+
+def test_guardrail_interval_unavailable_holds_and_diff_ci_detects_regression() -> None:
+    # Unavailable interval (< 50/arm) must HOLD, never PASS
+    low_n_guard = MetricResult(
+        name="held_clear_win",
+        role="guardrail",
+        expected_direction="not_increase",
+        control_arm="dashboard",
+        variant_arm="verdict",
+        control_n=20,
+        control_events=1,
+        variant_n=20,
+        variant_events=3,
+        interval=None,
+    )
+    chk_hold = check_guardrail([low_n_guard])
+    assert chk_hold.status == "HOLD"
+
+    # Full experiment policy must return HOLD when guardrail interval is unavailable
+    exp = Experiment(
+        id="x", name="x", hypothesis="h", status="running", feature_name="f", planned_sample=40
+    )
+    exposure = Exposure(
+        as_of=None,
+        planned_weights={"dashboard": 0.5, "verdict": 0.5},
+        counts={"dashboard": 20, "verdict": 20},
+    )
+    results = ExperimentResults(
+        srm_p_value=1.0,
+        metrics=[
+            MetricResult(
+                name="shipped_ambiguous",
+                role="primary",
+                expected_direction="decrease",
+                control_arm="dashboard",
+                variant_arm="verdict",
+                control_n=20,
+                control_events=14,
+                variant_n=20,
+                variant_events=4,
+                relative_lift=-0.71,
+                interval=Interval(low=-0.85, high=-0.20),
+                win_probability=0.99,
+            ),
+            low_n_guard,
+        ],
+    )
+    checks = run_all_checks(exp, exposure, results)
+    assert evaluate_verdict(exp, exposure, results, checks).verdict == "HOLD"
+
+    # 4/100 vs 12/100 (Flagsmith interval=None because ctrl<5) -> 95% diff CI excludes 0 -> FAIL -> REJECT
+    regressed_guard = MetricResult(
+        name="held_clear_win",
+        role="guardrail",
+        expected_direction="not_increase",
+        control_arm="dashboard",
+        variant_arm="verdict",
+        control_n=100,
+        control_events=4,
+        variant_n=100,
+        variant_events=12,
+        interval=None,
+    )
+    chk_fail = check_guardrail([regressed_guard])
+    assert chk_fail.status == "FAIL"
+    assert "+8.0 pp" in chk_fail.detail
+
+    # Stable guardrail counts (8/100 vs 9/100) with interval=None -> diff CI includes 0 -> PASS
+    stable_guard = MetricResult(
+        name="held_clear_win",
+        role="guardrail",
+        expected_direction="not_increase",
+        control_arm="dashboard",
+        variant_arm="verdict",
+        control_n=100,
+        control_events=8,
+        variant_n=100,
+        variant_events=9,
+        interval=None,
+    )
+    assert check_guardrail([stable_guard]).status == "PASS"
+
+
+def test_low_n_missing_arm_warns_while_adequate_n_missing_arm_fails() -> None:
+    thresholds = VerdictThresholds(min_exposures_per_arm=30)
+    tiny = Exposure(
+        as_of=None,
+        planned_weights={"dashboard": 0.5, "verdict": 0.5},
+        counts={"dashboard": 2, "verdict": 0},
+    )
+    assert check_arms_present(tiny, thresholds).status == "WARN"
+
+    seeded_fault = Exposure(
+        as_of=None,
+        planned_weights={"control": 0.5, "variant": 0.5},
+        counts={"control": 90, "variant": 0},
+    )
+    assert check_arms_present(seeded_fault, thresholds).status == "FAIL"
+    assert check_srm(seeded_fault, ExperimentResults(), thresholds).status == "FAIL"

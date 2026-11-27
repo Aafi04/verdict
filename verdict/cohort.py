@@ -10,7 +10,7 @@ from typing import Literal
 
 from quiz.db import QuizDatabase
 from verdict.checks import run_all_checks
-from verdict.config import EXPERIMENT_STARTED_AT_UTC, VerdictThresholds
+from verdict.config import EXPERIMENT_STARTED_AT_UTC, FREEZE_UTC_ISO, VerdictThresholds
 from verdict.models import (
     CheckResult,
     Experiment,
@@ -84,6 +84,7 @@ def evaluate_sqlite_cohort(
     *,
     cohort: Literal["real", "combined", "synthetic"] = "real",
     since: str | None = None,
+    until: str | None = None,
     prior_looks: int = 0,
     thresholds: VerdictThresholds | None = None,
 ) -> tuple[Exposure, ExperimentResults, VerdictResult]:
@@ -102,7 +103,7 @@ def evaluate_sqlite_cohort(
             "by_arm": {},
         }
     else:
-        summary = QuizDatabase(db_path).summarize(cohort=cohort, since=since)
+        summary = QuizDatabase(db_path).summarize(cohort=cohort, since=since, until=until)
 
     by_arm = summary["by_arm"]
     ctrl = by_arm.get("dashboard", {"exposures": 0, "shipped_ambiguous": 0, "held_clear_win": 0})
@@ -199,6 +200,42 @@ def evaluate_sqlite_cohort(
         prior_looks=prior_looks,
         thresholds=cfg,
     )
+    if cohort == "real" and (
+        ctrl_n < _MIN_IDENTITIES_PER_VARIANT or var_n < _MIN_IDENTITIES_PER_VARIANT
+    ):
+        # Low real sample (< 50/arm) or a missing arm due to low N is insufficient data (HOLD),
+        # unless there is a genuine integrity fault at adequate N (>= 50 total SRM or event>exposure).
+        by_name = {c.name: c for c in checks}
+        ratio_fail = by_name.get("exposure_event_ratio") is not None and by_name["exposure_event_ratio"].status == "FAIL"
+        srm_fail_adequate_n = (
+            by_name.get("srm") is not None
+            and by_name["srm"].status == "FAIL"
+            and exposure.total >= _MIN_IDENTITIES_PER_VARIANT
+        )
+        if not ratio_fail and not srm_fail_adequate_n:
+            normalized_checks = [
+                CheckResult(
+                    name=c.name,
+                    status="HOLD" if c.name in {"srm", "arms_present"} and c.status == "FAIL" else c.status,
+                    detail=c.detail,
+                )
+                for c in checks
+            ]
+            reason = (
+                f"Insufficient real data: N={exposure.total} (dashboard={ctrl_n}, verdict={var_n}), "
+                f"below pre-registered minimum ({_MIN_IDENTITIES_PER_VARIANT} per arm)."
+            )
+            v_hash = _compute_verdict_hash(exp_model, exposure, results, "HOLD", normalized_checks)
+            verdict = VerdictResult(
+                verdict="HOLD",
+                verdict_hash=v_hash,
+                checks=normalized_checks,
+                reasons=[reason],
+                next_action="Collect more real responses (>= 50 per arm) before evaluating real-only.",
+                winning_arm=None,
+            )
+            return exposure, results, verdict
+
     verdict = evaluate_verdict(exp_model, exposure, results, checks, cfg)
     return exposure, results, verdict
 
@@ -215,10 +252,13 @@ def build_cohort_comparison(
     """Compute combined N, real N, synthetic N, and compare combined vs real-only verdicts."""
     cfg = thresholds or VerdictThresholds(default_planned_sample=experiment.planned_sample)
     since = EXPERIMENT_STARTED_AT_UTC if str(experiment.id) == "2" else None
+    until = FREEZE_UTC_ISO if str(experiment.id) == "2" else None
     if db_path is not None and db_path.exists():
         db = QuizDatabase(db_path)
-        real_total = int(db.summarize(cohort="real", since=since)["totals"]["exposures"])
-        syn_total = int(db.summarize(cohort="synthetic", since=since)["totals"]["exposures"])
+        real_total = int(db.summarize(cohort="real", since=since, until=until)["totals"]["exposures"])
+        syn_total = int(
+            db.summarize(cohort="synthetic", since=since, until=until)["totals"]["exposures"]
+        )
         combined_n = max(combined_exposure.total, real_total + syn_total)
         # If Flagsmith combined total includes synthetic/real not yet synced or fixtures are evaluated:
         if combined_n > real_total + syn_total and experiment.simulated:
@@ -236,6 +276,7 @@ def build_cohort_comparison(
             db_path,
             cohort="real",
             since=since,
+            until=until,
             prior_looks=prior_looks,
             thresholds=cfg,
         )

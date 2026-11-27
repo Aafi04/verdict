@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from verdict.checks import compute_proportion_diff_interval
 from verdict.models import Experiment, ExperimentResults, Exposure, VerdictResult
 
 if TYPE_CHECKING:
@@ -176,10 +177,27 @@ def memo_from_verdict(
             else f"{guardrail.name}: CI [{guardrail.interval.low:+.1%}, {guardrail.interval.high:+.1%}]"
         )
     else:
-        guardrail_status = (
-            f"{guardrail.name}: {guardrail.control_events}/{guardrail.control_n} ctrl vs "
-            f"{guardrail.variant_events}/{guardrail.variant_n} var (interval pending)"
+        diff_iv = compute_proportion_diff_interval(
+            guardrail.control_n,
+            guardrail.control_events,
+            guardrail.variant_n,
+            guardrail.variant_events,
         )
+        if diff_iv is not None:
+            p_c = guardrail.control_events / guardrail.control_n
+            p_v = guardrail.variant_events / guardrail.variant_n
+            diff_pp = (p_v - p_c) * 100.0
+            guardrail_status = (
+                f"{guardrail.name}: {guardrail.control_events}/{guardrail.control_n} ({p_c:.1%}) "
+                f"ctrl vs {guardrail.variant_events}/{guardrail.variant_n} ({p_v:.1%}) var | "
+                f"diff {diff_pp:+.1f} pp (95% diff CI [{diff_iv.low * 100:+.1f} pp, "
+                f"{diff_iv.high * 100:+.1f} pp])"
+            )
+        else:
+            guardrail_status = (
+                f"{guardrail.name}: {guardrail.control_events}/{guardrail.control_n} ctrl vs "
+                f"{guardrail.variant_events}/{guardrail.variant_n} var (interval unavailable)"
+            )
 
     summary_map = {
         "SHIP": f"Safe to roll out '{verdict.winning_arm}': checks and sample criteria pass.",

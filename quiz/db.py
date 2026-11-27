@@ -130,15 +130,20 @@ class QuizDatabase:
             )
             return cur.rowcount == 1
 
-    def count_real_exposures(self, *, since: str | None = None) -> int:
+    def count_real_exposures(
+        self, *, since: str | None = None, until: str | None = None
+    ) -> int:
         """Return count of non-synthetic (`synthetic=0 AND simulated=0`) exposures."""
         sql = "SELECT COUNT(*) FROM visitors WHERE synthetic = 0 AND simulated = 0"
-        params: tuple[Any, ...] = ()
+        params: list[Any] = []
         if since:
             sql += " AND datetime(exposed_at) >= datetime(?)"
-            params = (since,)
+            params.append(since)
+        if until:
+            sql += " AND datetime(exposed_at) <= datetime(?)"
+            params.append(until)
         with self._connect() as conn:
-            row = conn.execute(sql, params).fetchone()
+            row = conn.execute(sql, tuple(params)).fetchone()
             return int(row[0]) if row else 0
 
     def summarize(
@@ -147,6 +152,7 @@ class QuizDatabase:
         simulated: bool | None = None,
         cohort: Cohort | None = None,
         since: str | None = None,
+        until: str | None = None,
     ) -> dict[str, Any]:
         """Aggregate exposure, completion, and metric counts."""
         clauses: list[str] = []
@@ -158,6 +164,9 @@ class QuizDatabase:
         if since:
             clauses.append("datetime(exposed_at) >= datetime(?)")
             params.append(since)
+        if until:
+            clauses.append("datetime(exposed_at) <= datetime(?)")
+            params.append(until)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
         with self._connect() as conn:

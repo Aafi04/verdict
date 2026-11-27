@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Registered start timestamp (UTC) of Production Experiment 2 (result_view_experiment_v2).
 # Rows recorded prior to this timestamp (e.g. pre-launch Experiment 1 phone-test row)
 # remain untouched in SQLite and are excluded from Experiment 2 counts/checks.
 EXPERIMENT_STARTED_AT_UTC = "2026-11-26T08:38:17Z"
+
+# Freeze timestamp (UTC) moved from pre-registered 2026-11-29T03:30:00Z to
+# collection-complete time (see docs/EXPERIMENT.md Deviations). All Production
+# analyses filter SQLite rows up to this timestamp.
+FREEZE_UTC = datetime(2026, 11, 26, 11, 21, 55, tzinfo=UTC)
+FREEZE_UTC_ISO = "2026-11-26T11:21:55Z"
 
 
 def load_dotenv(path: Path = Path(".env")) -> None:

@@ -338,3 +338,82 @@ class RestClient:
             "rollout_variant": data.get("rollout_variant"),
             "ended_at": data.get("ended_at"),
         }
+
+    def get_environment_feature_state(self, feature_id: int) -> dict[str, Any]:
+        """Fetch live environment default FeatureState (feature_segment=null) for a feature."""
+        resp = self._client.get(
+            f"{self.base_url}/api/v1/environments/{self.env_key}/featurestates/",
+            params={"feature": feature_id},
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        items = body.get("results", body if isinstance(body, list) else [])
+        default_state = next(
+            (s for s in items if s.get("feature") == feature_id and s.get("feature_segment") is None),
+            None,
+        )
+        if default_state is None:
+            raise ValueError(f"Default featurestate for feature {feature_id} not found.")
+        return default_state
+
+    def propose_rollback(self, experiment_id: str) -> ProposedChange:
+        """Build a rollback payload resetting environment default variants to 0% (100% control)."""
+        detail = self._fetch_detail(experiment_id)
+        numeric_id = str(detail["id"])
+        feature = detail.get("feature") or {}
+        feature_id = int(feature["id"])
+        feature_name = str(feature.get("name") or "result_view")
+        initial_value = str(feature.get("initial_value") or "control")
+
+        state = self.get_environment_feature_state(feature_id)
+        mv_reset = [
+            {
+                "id": int(mv["id"]),
+                "multivariate_feature_option": int(mv["multivariate_feature_option"]),
+                "percentage_allocation": 0.0,
+            }
+            for mv in (state.get("multivariate_feature_state_values") or [])
+        ]
+        payload = {
+            "featurestate_id": int(state["id"]),
+            "feature": feature_id,
+            "environment": int(state["environment"]),
+            "enabled": True,
+            "multivariate_feature_state_values": mv_reset,
+        }
+        return ProposedChange(
+            experiment_id=numeric_id,
+            feature_name=feature_name,
+            winning_arm=initial_value,
+            description=(
+                f"Roll back '{feature_name}' (featurestate id={state['id']}) to 100% "
+                f"control ('{initial_value}') after experiment {numeric_id} ('{detail.get('name')}')."
+            ),
+            payload=payload,
+        )
+
+    def rollback(self, change: ProposedChange) -> dict[str, Any]:
+        """Execute a proposed feature-state rollback via Flagsmith Management API."""
+        fs_id = int(change.payload["featurestate_id"])
+        patch_body = {
+            "feature": change.payload["feature"],
+            "environment": change.payload["environment"],
+            "enabled": change.payload.get("enabled", True),
+            "multivariate_feature_state_values": change.payload[
+                "multivariate_feature_state_values"
+            ],
+        }
+        resp = self._client.patch(
+            f"{self.base_url}/api/v1/environments/{self.env_key}/featurestates/{fs_id}/",
+            json=patch_body,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._detail_cache.pop(change.experiment_id, None)
+        return {
+            "featurestate_id": data.get("id"),
+            "feature": data.get("feature"),
+            "enabled": data.get("enabled"),
+            "feature_state_value": data.get("feature_state_value"),
+            "multivariate_feature_state_values": data.get("multivariate_feature_state_values"),
+        }

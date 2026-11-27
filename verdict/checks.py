@@ -15,6 +15,31 @@ from verdict.models import (
     MetricResult,
 )
 
+# Matching Flagsmith experimentation/stats.py (_Z_95) and RESULTS_MIN_IDENTITIES_PER_VARIANT (50).
+_Z_95 = 1.959963984540054
+MIN_GUARDRAIL_IDENTITIES_PER_ARM = 50
+
+
+def compute_proportion_diff_interval(
+    control_n: int,
+    control_events: int,
+    variant_n: int,
+    variant_events: int,
+    *,
+    min_per_arm: int = MIN_GUARDRAIL_IDENTITIES_PER_ARM,
+) -> Interval | None:
+    """95% CI for difference in proportions (variant - control) using Flagsmith's normal variance."""
+    if control_n < min_per_arm or variant_n < min_per_arm or control_n < 2 or variant_n < 2:
+        return None
+    p_c = control_events / control_n
+    p_v = variant_events / variant_n
+    diff = p_v - p_c
+    # Same sample-variance formula as Flagsmith experimentation/stats.py VariantStats.variance.
+    var_c = max(0.0, (control_events - (control_events**2) / control_n) / (control_n - 1))
+    var_v = max(0.0, (variant_events - (variant_events**2) / variant_n) / (variant_n - 1))
+    se = math.sqrt(var_c / control_n + var_v / variant_n)
+    return Interval(low=diff - _Z_95 * se, high=diff + _Z_95 * se)
+
 
 def _gamma_q(a: float, x: float) -> float:
     """Regularized upper incomplete gamma Q(a, x) = Gamma(a, x) / Gamma(a)."""
@@ -136,6 +161,15 @@ def check_arms_present(exposure: Exposure, thresholds: VerdictThresholds) -> Che
     arms = list(exposure.planned_weights.keys()) or list(exposure.counts.keys())
     empty = [a for a in arms if exposure.counts.get(a, 0) <= 0]
     if empty:
+        if exposure.total < thresholds.min_exposures_per_arm:
+            return CheckResult(
+                name="arms_present",
+                status="WARN",
+                detail=(
+                    f"Insufficient sample (N={exposure.total} < {thresholds.min_exposures_per_arm}): "
+                    f"arm(s) without exposures yet: {', '.join(empty)}."
+                ),
+            )
         return CheckResult(
             name="arms_present",
             status="FAIL",
@@ -242,29 +276,77 @@ def check_prob_vs_interval(
 
 
 def check_guardrail(guardrails: list[MetricResult]) -> CheckResult:
-    """Verify no guardrail metric regressed significantly."""
+    """Verify guardrail metrics satisfy pre-registered rules (must not rise / interval excluding 0).
+
+    Pre-registered rule (docs/EXPERIMENT.md, docs/ARCHITECTURE.md, docs/PRD.md):
+      - expected_direction: not_increase ("must not rise materially")
+      - guardrail worse with interval excluding 0 -> FAIL (REJECT)
+      - interval unavailable or insufficient sample -> HOLD (never PASS)
+    """
     if not guardrails:
         return CheckResult(
             name="guardrail",
             status="WARN",
             detail="No guardrail metric provided.",
         )
+
+    summary_parts: list[str] = []
     for g in guardrails:
-        if g.interval is not None and _interval_regressed(g.interval, g.expected_direction):
+        if g.interval is not None:
+            if _interval_regressed(g.interval, g.expected_direction):
+                return CheckResult(
+                    name="guardrail",
+                    status="FAIL",
+                    detail=(
+                        f"Guardrail '{g.name}' regressed significantly "
+                        f"(CI [{g.interval.low:+.1%}, {g.interval.high:+.1%}], "
+                        f"expected {g.expected_direction}; worse with interval excluding 0)."
+                    ),
+                )
+            summary_parts.append(
+                f"{g.name} CI [{g.interval.low:+.1%}, {g.interval.high:+.1%}]"
+            )
+            continue
+
+        diff_iv = compute_proportion_diff_interval(
+            g.control_n, g.control_events, g.variant_n, g.variant_events
+        )
+        if diff_iv is None:
+            return CheckResult(
+                name="guardrail",
+                status="HOLD",
+                detail=(
+                    f"Guardrail '{g.name}' interval unavailable (got {g.control_n} ctrl, "
+                    f"{g.variant_n} var; requires >= {MIN_GUARDRAIL_IDENTITIES_PER_ARM}/arm); "
+                    "cannot pass guardrail check."
+                ),
+            )
+
+        p_c = g.control_events / g.control_n
+        p_v = g.variant_events / g.variant_n
+        diff_pp = (p_v - p_c) * 100.0
+        low_pp = diff_iv.low * 100.0
+        high_pp = diff_iv.high * 100.0
+        if _interval_regressed(diff_iv, g.expected_direction):
             return CheckResult(
                 name="guardrail",
                 status="FAIL",
                 detail=(
-                    f"Guardrail '{g.name}' regressed significantly "
-                    f"(CI [{g.interval.low:+.1%}, {g.interval.high:+.1%}], "
-                    f"expected {g.expected_direction})."
+                    f"Guardrail '{g.name}' regressed under pre-registered rule "
+                    f"('{g.expected_direction}' / worse with interval excluding 0): "
+                    f"{g.control_events}/{g.control_n} ({p_c:.1%}) ctrl vs "
+                    f"{g.variant_events}/{g.variant_n} ({p_v:.1%}) var; "
+                    f"diff {diff_pp:+.1f} pp (95% diff CI [{low_pp:+.1f} pp, {high_pp:+.1f} pp])."
                 ),
             )
-    names = ", ".join(g.name for g in guardrails)
+        summary_parts.append(
+            f"{g.name} diff {diff_pp:+.1f} pp (95% diff CI [{low_pp:+.1f} pp, {high_pp:+.1f} pp])"
+        )
+
     return CheckResult(
         name="guardrail",
         status="PASS",
-        detail=f"Guardrail metric(s) stable ({names}).",
+        detail=f"Guardrail metric(s) stable ({'; '.join(summary_parts)}).",
     )
 
 

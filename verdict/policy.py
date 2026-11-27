@@ -63,7 +63,9 @@ def evaluate_verdict(
     ]
     guardrail_chk = by_name.get("guardrail")
     hold_checks = [
-        c for c in checks if c.name in {"sample_reached", "interval_zero"} and c.status == "HOLD"
+        c
+        for c in checks
+        if c.name in {"sample_reached", "interval_zero", "guardrail"} and c.status == "HOLD"
     ]
 
     if integrity_fails:
@@ -81,7 +83,12 @@ def evaluate_verdict(
         reasons = [c.detail for c in hold_checks]
         if (prob_chk := by_name.get("prob_vs_interval")) and prob_chk.status == "WARN":
             reasons.append(prob_chk.detail)
-        next_action = "Keep running until planned sample is reached and 95% CI excludes zero."
+        next_action = (
+            "Keep running until planned sample is reached, guardrail interval is available, "
+            "and 95% CI excludes zero."
+            if guardrail_chk is not None and guardrail_chk.status == "HOLD"
+            else "Keep running until planned sample is reached and 95% CI excludes zero."
+        )
         winning_arm = None
     else:
         verdict = "SHIP"

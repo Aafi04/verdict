@@ -22,10 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from verdict.config import EXPERIMENT_STARTED_AT_UTC
-
-# Registered freeze time from docs/EXPERIMENT.md: Nov 29, 2026, 09:00 IST (+05:30)
-FREEZE_UTC = datetime(2026, 11, 29, 3, 30, 0, tzinfo=UTC)
+from verdict.config import EXPERIMENT_STARTED_AT_UTC, FREEZE_UTC, FREEZE_UTC_ISO
 
 
 def _anon_id(vid: str, salt: str) -> str:
@@ -53,6 +50,7 @@ def export_csvs(
     out_dir: Path,
     mode: str = "production",
     since: str | None = EXPERIMENT_STARTED_AT_UTC,
+    until: str | None = None,
     now: datetime | None = None,
     allow_pre_freeze: bool = False,
 ) -> dict[str, Path]:
@@ -63,6 +61,7 @@ def export_csvs(
             "Pre-freeze guard: refusing to export Production outcomes before "
             f"{FREEZE_UTC.isoformat()} without --allow-pre-freeze."
         )
+    effective_until = FREEZE_UTC_ISO if (until is None and mode == "production") else until
 
     out_dir.mkdir(parents=True, exist_ok=True)
     salt = secrets.token_hex(16)  # Ephemeral per-export salt; never persisted.
@@ -84,6 +83,9 @@ def export_csvs(
             if since:
                 clauses.append("datetime(exposed_at) >= datetime(?)")
                 params.append(since)
+            if effective_until:
+                clauses.append("datetime(exposed_at) <= datetime(?)")
+                params.append(effective_until)
             where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
             rows = conn.execute(
                 f"""

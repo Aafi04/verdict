@@ -302,6 +302,58 @@ def _cmd_apply(args: argparse.Namespace) -> int:
         _close_if_needed(client)
 
 
+def _cmd_rollback(args: argparse.Namespace) -> int:
+    audit_path = Path(args.audit_path)
+    base_url, api_key, env_key, simulated = resolve_env_config(args.env)
+    client = RestClient(
+        base_url=base_url,
+        api_key=api_key,
+        env_key=env_key,
+        planned_sample=200,
+        simulated=simulated,
+        refresh=False,
+    )
+    try:
+        experiment = client.get_experiment(args.experiment)
+        change = client.propose_rollback(experiment.id)
+        expected_phrase = f"ROLLBACK {experiment.id} {change.feature_name}"
+
+        print(f"Proposed rollback: {change.description}")
+        print(f"Payload: {json.dumps(change.payload)}")
+
+        if not args.execute or args.dry_run:
+            print("\nDRY-RUN ONLY: no changes written to Flagsmith.")
+            print(f"To execute, re-run with --execute and type: {expected_phrase}")
+            return 0
+
+        try:
+            typed = input(f"Type '{expected_phrase}' to execute rollback: ").strip()
+        except EOFError:
+            typed = ""
+
+        if typed != expected_phrase:
+            print("ABORTED: rollback approval phrase did not match; no changes written.", file=sys.stderr)
+            return 1
+
+        rb_result = client.rollback(change)
+        audit_entry = {
+            "ts": datetime.now(UTC).isoformat(),
+            "action": "rollback",
+            "id": experiment.id,
+            "experiment_name": experiment.name,
+            "simulated": experiment.simulated,
+            "change": change.model_dump(),
+            "result": rb_result,
+            "approver": "human-typed",
+        }
+        append_audit(audit_entry, audit_path=audit_path)
+        print(f"ROLLED BACK: {json.dumps(rb_result)}")
+        print(f"Audit entry recorded in {audit_path}.")
+        return 0
+    finally:
+        _close_if_needed(client)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="verdict", description="Verdict experiment auditor CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -352,6 +404,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_apply.add_argument("--dry-run", action="store_true", help="Explicit dry-run (default behavior)")
     p_apply.add_argument("--execute", action="store_true", help="Execute write after typed human approval")
 
+    p_rb = sub.add_parser("rollback", help="Roll back an applied rollout to 100% control (dry-run by default)")
+    p_rb.add_argument("experiment", help="Experiment ID or name")
+    p_rb.add_argument(
+        "--env",
+        choices=("simulation", "development", "production"),
+        default="simulation",
+        help="Target Flagsmith environment (default: simulation)",
+    )
+    p_rb.add_argument("--audit-path", default=str(DEFAULT_AUDIT_PATH))
+    p_rb.add_argument("--dry-run", action="store_true", help="Explicit dry-run (default behavior)")
+    p_rb.add_argument("--execute", action="store_true", help="Execute rollback after typed human approval")
+
     return parser
 
 
@@ -366,6 +430,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_plan(args)
     if args.command == "apply":
         return _cmd_apply(args)
+    if args.command == "rollback":
+        return _cmd_rollback(args)
     return 2
 
 

@@ -36,15 +36,17 @@ def validate_simulation_only(sim_env_key: str, prod_env_key: str, env_arg: str) 
         )
 
 
-def ensure_seeded_fault_experiment(
+def ensure_simulation_experiment(
     client: httpx.Client,
     *,
     base_url: str,
     sim_env_key: str,
-    flag_name: str = "seeded_fault_demo",
-    exp_name: str = "seeded_fault_sim",
+    flag_name: str,
+    exp_name: str,
+    hypothesis: str,
+    metrics_spec: list[dict[str, str]],
 ) -> dict[str, Any]:
-    """Ensure the Simulation environment has `seeded_fault_demo` and `seeded_fault_sim`."""
+    """Ensure Simulation has a multivariate flag, metrics, and a running 50/50 experiment."""
     base = base_url.rstrip("/")
 
     # 1. Resolve Simulation environment and project ID
@@ -58,7 +60,7 @@ def ensure_seeded_fault_experiment(
         )
     project_id = int(env_data["project"])
 
-    # 2. Find or reuse existing seeded_fault_sim experiment
+    # 2. Find or reuse existing experiment
     exps_resp = client.get(f"{base}/api/v1/environments/{sim_env_key}/experiments/")
     exps_resp.raise_for_status()
     exp_items = exps_resp.json()
@@ -68,7 +70,7 @@ def ensure_seeded_fault_experiment(
         if item.get("name") == exp_name:
             return item
 
-    # 3. Find or create multivariate flag `seeded_fault_demo`
+    # 3. Find or create multivariate flag
     feat_resp = client.get(f"{base}/api/v1/projects/{project_id}/features/?search={flag_name}")
     feat_resp.raise_for_status()
     feat_body = feat_resp.json()
@@ -99,38 +101,47 @@ def ensure_seeded_fault_experiment(
     mv_options = feature.get("multivariate_options") or []
     mv_opt_id = int(mv_options[0]["id"])
 
-    # 4. Find or create metric `fault_conversion`
+    # 4. Find or create metrics
     exp_metrics_url = f"{base}/api/v1/environments/{sim_env_key}/experiment-metrics/"
     m_list_resp = client.get(exp_metrics_url)
-    metric_id: int | None = None
+    existing_metrics: dict[str, int] = {}
     if m_list_resp.status_code == 200:
         m_items = m_list_resp.json()
         if isinstance(m_items, dict):
             m_items = m_items.get("results", [])
-        found = next((m for m in m_items if m.get("name") == "fault_conversion"), None)
-        if found:
-            metric_id = int(found["id"])
-    if metric_id is None:
-        m_create = client.post(
-            exp_metrics_url,
-            json={
-                "name": "fault_conversion",
-                "aggregation": "occurrence",
-                "direction": "up",
-                "definition": {"event": "fault_conversion", "version": 1},
-            },
-        )
-        m_create.raise_for_status()
-        metric_id = int(m_create.json()["id"])
+        for m in m_items:
+            if m.get("name") is not None:
+                existing_metrics[str(m["name"])] = int(m["id"])
 
-    # 5. Create and start `seeded_fault_sim` (50/50, 100% rollout)
+    attached_metrics: list[dict[str, Any]] = []
+    for spec in metrics_spec:
+        m_name = spec["name"]
+        metric_id = existing_metrics.get(m_name)
+        if metric_id is None:
+            m_create = client.post(
+                exp_metrics_url,
+                json={
+                    "name": m_name,
+                    "aggregation": "occurrence",
+                    "direction": spec["direction"],
+                    "definition": {"event": m_name, "version": 1},
+                },
+            )
+            m_create.raise_for_status()
+            metric_id = int(m_create.json()["id"])
+            existing_metrics[m_name] = metric_id
+        attached_metrics.append(
+            {"metric": metric_id, "expected_direction": spec["expected_direction"]}
+        )
+
+    # 5. Create and start experiment (50/50, 100% rollout)
     create_exp = client.post(
         f"{base}/api/v1/environments/{sim_env_key}/experiments/",
         json={
             "feature": feature_id,
             "name": exp_name,
-            "hypothesis": "[SIMULATED FAULT] Demonstrate Verdict REJECT on a broken 50/50 split.",
-            "metrics": [{"metric": metric_id, "expected_direction": "increase"}],
+            "hypothesis": hypothesis,
+            "metrics": attached_metrics,
             "experiment_rollout": {
                 "enabled": True,
                 "rollout_percentage": 100.0,
@@ -151,6 +162,32 @@ def ensure_seeded_fault_experiment(
     )
     start_resp.raise_for_status()
     return start_resp.json()
+
+
+def ensure_seeded_fault_experiment(
+    client: httpx.Client,
+    *,
+    base_url: str,
+    sim_env_key: str,
+    flag_name: str = "seeded_fault_demo",
+    exp_name: str = "seeded_fault_sim",
+) -> dict[str, Any]:
+    """Ensure the Simulation environment has `seeded_fault_demo` and `seeded_fault_sim`."""
+    return ensure_simulation_experiment(
+        client,
+        base_url=base_url,
+        sim_env_key=sim_env_key,
+        flag_name=flag_name,
+        exp_name=exp_name,
+        hypothesis="[SIMULATED FAULT] Demonstrate Verdict REJECT on a broken 50/50 split.",
+        metrics_spec=[
+            {
+                "name": "fault_conversion",
+                "direction": "up",
+                "expected_direction": "increase",
+            }
+        ],
+    )
 
 
 def emit_srm_fault_traffic(

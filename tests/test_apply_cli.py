@@ -292,3 +292,84 @@ def test_apply_execute_succeeds_and_writes_audit_log(
     assert entries[0]["verdict_hash"] == verdict_hash
     assert entries[0]["approver"] == "human-typed"
     assert entries[0]["change"]["payload"] == {"rollout_decision": "variant", "rollout_variant": 10}
+
+
+def test_rollback_dry_run_and_execute(tmp_path: Path, monkeypatch, capsys) -> None:
+    calls: list[tuple[str, str, dict | None]] = []
+    monkeypatch.setenv("FLAGSMITH_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("FLAGSMITH_API_KEY", "org.key")
+    monkeypatch.setenv("FLAGSMITH_SIM_ENV_KEY", "sim-key")
+
+    detail = _sample_detail(exp_id=7, name="result_view_sim")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        body = json.loads(request.content.decode()) if request.content else None
+        calls.append((request.method, path, body))
+        if path.endswith("/experiments/7/") and request.method == "GET":
+            return httpx.Response(200, json=detail)
+        if path.endswith("/featurestates/") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "id": 99,
+                            "feature": 1,
+                            "environment": 3,
+                            "feature_segment": None,
+                            "enabled": True,
+                            "feature_state_value": "dashboard",
+                            "multivariate_feature_state_values": [
+                                {
+                                    "id": 50,
+                                    "multivariate_feature_option": 10,
+                                    "percentage_allocation": 100.0,
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+        if path.endswith("/featurestates/99/") and request.method == "PATCH":
+            return httpx.Response(
+                200,
+                json={
+                    "id": 99,
+                    "feature": 1,
+                    "enabled": True,
+                    "feature_state_value": "dashboard",
+                    "multivariate_feature_state_values": (body or {}).get(
+                        "multivariate_feature_state_values"
+                    ),
+                },
+            )
+        return httpx.Response(404, json={})
+
+    orig_init = RestClient.__init__
+
+    def patched_init(self, base_url, api_key, env_key, **kwargs):
+        kwargs["http_client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        orig_init(self, base_url, api_key, env_key, **kwargs)
+
+    monkeypatch.setattr(RestClient, "__init__", patched_init)
+    audit_path = tmp_path / "audit.jsonl"
+
+    # Dry-run makes no PATCH writes
+    rc_dry = main(["rollback", "7", "--env", "simulation", "--audit-path", str(audit_path)])
+    assert rc_dry == 0
+    assert "DRY-RUN ONLY" in capsys.readouterr().out
+    assert not any(m == "PATCH" for m, _, _ in calls)
+
+    # Execute with typed approval runs PATCH and writes audit log
+    monkeypatch.setattr("builtins.input", lambda _p: "ROLLBACK 7 result_view")
+    rc_exec = main(
+        ["rollback", "7", "--env", "simulation", "--execute", "--audit-path", str(audit_path)]
+    )
+    assert rc_exec == 0
+    assert "ROLLED BACK:" in capsys.readouterr().out
+    assert any(m == "PATCH" and path.endswith("/featurestates/99/") for m, path, _ in calls)
+    rb_entry = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
+    assert rb_entry["action"] == "rollback"
+    assert rb_entry["approver"] == "human-typed"
+    assert rb_entry["result"]["multivariate_feature_state_values"][0]["percentage_allocation"] == 0.0
