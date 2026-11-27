@@ -453,16 +453,38 @@
 
     @media (max-width: 760px) {
       body { font-size: 16px; }
+      .ribbon { position: static; padding: 10px 14px; font-size: 0.88rem; }
+      .wrap { padding: 18px 14px 48px; }
       .evidence-grid, .cohort-grid, .autonomy-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .hero, .card, .approval-panel, .disagree-box, .check-item {
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
       .check-item {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
         gap: 6px;
+        padding: 14px;
       }
-      .hero { padding: 20px 18px; }
-      .hero h1 { font-size: 1.55rem; }
-      .verdict-badge { font-size: 1.45rem; padding: 8px 16px; }
+      .hero { padding: 18px 16px; }
+      .hero h1 { font-size: 1.45rem; }
+      .verdict-badge {
+        font-size: 1.15rem;
+        padding: 8px 14px;
+        max-width: 100%;
+        white-space: normal;
+      }
+      .big-stat { font-size: 1.65rem; }
+      .cmd-box {
+        font-size: 0.82rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .footer {
+        font-size: 0.78rem;
+        word-break: break-all;
+      }
     }
   </style>
 </head>

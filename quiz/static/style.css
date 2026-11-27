@@ -293,6 +293,10 @@ ul.reasons {
     display: block;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    font-size: 0.82rem;
+  }
+  th, td {
+    padding: 7px 6px;
   }
   .actions {
     flex-direction: column;
