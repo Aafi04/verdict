@@ -93,7 +93,38 @@ Even though the primary metric looked like a slam dunk (`-35.0%` lift, `95% CI [
 
 ## Visual Walkthrough
 
-*(Screenshots from the live demo run will be embedded here after the browser walkthrough.)*
+### 1. Track 1 Quiz: Standard Dashboard vs Verdict Memo (`result_view` A/B test)
+
+Visitors randomized to **`dashboard`** see a tempting `"86% Chance to Beat Control"` headline next to a zero-crossing interval (`-9.8% to +34.1%`). Visitors randomized to **`verdict`** see the deterministic **`VERDICT: HOLD`** memo with explicit reasons before choosing **Ship** or **Hold**.
+
+| Control Arm (`dashboard`) — The 86% Trap | Treatment Arm (`verdict`) — Deterministic HOLD Memo |
+|---|---|
+| ![Quiz Scenario 1 Dashboard Arm](docs/screenshots/quiz-dashboard-arm.png) | ![Quiz Scenario 1 Verdict Arm](docs/screenshots/quiz-verdict-arm.png) |
+
+<details>
+<summary>Completion screen (<code>/done</code>): immediate feedback comparing respondent choices vs statistical reading</summary>
+
+![Quiz Done Screen](docs/screenshots/quiz-done.png)
+
+</details>
+
+### 2. Verdict Results Report — Production Experiment `2` (`REJECT` on Guardrail Regression)
+
+Even with `-35.0%` primary lift and `100%` win probability, Verdict blocks rollout because `held_clear_win` regressed from `4/100` (`4.0%`) to `12/100` (`12.0%`) (`+8.0 pp`, `95% diff CI [+0.5 pp, +15.5 pp]`), and flags the `VERDICT DISAGREEMENT` against the underpowered real-only cohort (`N=2`, `HOLD`).
+
+![Production Experiment 2 Hero and CI Bars](docs/screenshots/results-prod-reject.png)
+
+| Guardrail Regression Caught in Checks Timeline | Combined vs Real-Only Cohort Disagreement |
+|---|---|
+| ![Production Guardrail Fail](docs/screenshots/results-prod-guardrail-fail.png) | ![Production Cohort Disagreement](docs/screenshots/results-prod-cohorts.png) |
+
+### 3. Simulation Paths — Seeded SRM Fault (`REJECT`) & Clear Win (`SHIP` + Typed Approval + Audit Log)
+
+| Seeded SRM Fault (`seeded_fault_sim` → `REJECT`) | Clear Win (`seeded_clear_win_sim_v2` → `SHIP`) |
+|---|---|
+| ![Simulation Seeded SRM Fault](docs/screenshots/results-sim-srm-fault.png) | ![Simulation Clear Win SHIP](docs/screenshots/results-sim-ship.png) |
+
+![Human Approval Panel and Audit Log](docs/screenshots/results-sim-approval-audit.png)
 
 ---
 
