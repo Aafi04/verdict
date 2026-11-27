@@ -86,6 +86,8 @@ def main() -> int:
         description="Create/seed a simulated clear-win SHIP experiment in Flagsmith Simulation."
     )
     parser.add_argument("--env", default="simulation", help="Must be 'simulation'")
+    parser.add_argument("--exp-name", default="seeded_clear_win_sim_v2")
+    parser.add_argument("--flag-name", default="seeded_clear_win_demo_v2")
     parser.add_argument("--total", type=int, default=200)
     parser.add_argument("--seed", type=int, default=20261127)
     parser.add_argument("--dry-run", action="store_true", help="Print plan without touching Flagsmith")
@@ -104,8 +106,9 @@ def main() -> int:
 
     if args.dry_run:
         print(
-            f"[DRY-RUN] Would create/use 'seeded_clear_win_sim' in Simulation ({base_url}) "
-            f"and emit {args.total} balanced synthetic visitors (seed={args.seed})."
+            f"[DRY-RUN] Would create/use '{args.exp_name}' (flag '{args.flag_name}') "
+            f"in Simulation ({base_url}) and emit {args.total} balanced synthetic visitors "
+            f"(seed={args.seed})."
         )
         return 0
 
@@ -118,8 +121,8 @@ def main() -> int:
             client,
             base_url=base_url,
             sim_env_key=sim_key,
-            flag_name="seeded_clear_win_demo_v2",
-            exp_name="seeded_clear_win_sim_v2",
+            flag_name=args.flag_name,
+            exp_name=args.exp_name,
             hypothesis="[SIMULATED CLEAR WIN] Demonstrate Verdict SHIP + approved apply + rollback.",
             metrics_spec=[
                 {
@@ -138,7 +141,7 @@ def main() -> int:
     sent = emit_clear_win_traffic(
         base_url=base_url,
         sim_env_key=sim_key,
-        flag_name="seeded_clear_win_demo_v2",
+        flag_name=args.flag_name,
         total_visitors=args.total,
         seed=args.seed,
     )

@@ -148,17 +148,25 @@ def check_srm(
     if fs_p is not None:
         parts.append(f"flagsmith_p={fs_p:.4g}")
     p_desc = ", ".join(parts)
+    assumed_note = (
+        "; equal weights assumed (completed experiment rollout cleared by Flagsmith)"
+        if exposure.weights_assumed_equal
+        else ""
+    )
 
     if v_fail or f_fail:
         return CheckResult(
             name="srm",
             status="FAIL",
-            detail=f"Sample ratio mismatch detected ({p_desc} < {thresholds.srm_p_threshold}).",
+            detail=(
+                f"Sample ratio mismatch detected ({p_desc} < {thresholds.srm_p_threshold}"
+                f"{assumed_note})."
+            ),
         )
     return CheckResult(
         name="srm",
         status="PASS",
-        detail=f"Observed split matches allocation ({p_desc}).",
+        detail=f"Observed split matches allocation ({p_desc}{assumed_note}).",
     )
 
 

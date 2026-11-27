@@ -250,3 +250,18 @@ def test_completed_experiment_with_cleared_rollout_infers_equal_weights() -> Non
     detail["experiment_rollout"] = None
     weights, _ = RestClient._planned_weights_from_detail(detail)
     assert weights == {"control": 0.5, "verdict": 0.5}
+
+    transport = _mock_transport(
+        detail=detail,
+        exposures_points=[{"new_identities": {"control": 105, "verdict": 95}}],
+        results_payload={"srm_p_value": None, "metrics": []},
+    )
+    client = RestClient(
+        "http://127.0.0.1:8000",
+        "org.secret",
+        "sim-env-key",
+        simulated=True,
+        http_client=httpx.Client(transport=transport),
+    )
+    exp = client.get_exposures("6")
+    assert exp.weights_assumed_equal is True

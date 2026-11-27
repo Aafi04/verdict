@@ -45,6 +45,7 @@ class Exposure(BaseModel):
     planned_weights: dict[str, float]
     counts: dict[str, int]
     excluded_identities: int = 0
+    weights_assumed_equal: bool = False
 
     @property
     def total(self) -> int:

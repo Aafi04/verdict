@@ -179,7 +179,12 @@ class RestClient:
         payload = exp_obj.get("payload") or {}
         points = (payload.get("timeseries") or {}).get("points") or []
 
-        planned_weights, _ = self._planned_weights_from_detail(detail)
+        planned_weights, opt_key_by_id = self._planned_weights_from_detail(detail)
+        rollout = detail.get("experiment_rollout") or {}
+        mv_allocs = rollout.get("multivariate_feature_state_values") or []
+        weights_assumed_equal = (
+            detail.get("status") == "completed" and not mv_allocs and bool(opt_key_by_id)
+        )
         counts: dict[str, int] = {arm: 0 for arm in planned_weights}
         for pt in points:
             for arm, cnt in (pt.get("new_identities") or {}).items():
@@ -190,6 +195,7 @@ class RestClient:
             planned_weights=planned_weights,
             counts=counts,
             excluded_identities=int(payload.get("excluded_identities") or 0),
+            weights_assumed_equal=weights_assumed_equal,
         )
 
     def get_results(self, experiment_id: str) -> ExperimentResults:

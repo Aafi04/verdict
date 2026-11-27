@@ -270,3 +270,16 @@ def test_low_n_missing_arm_warns_while_adequate_n_missing_arm_fails() -> None:
     )
     assert check_arms_present(seeded_fault, thresholds).status == "FAIL"
     assert check_srm(seeded_fault, ExperimentResults(), thresholds).status == "FAIL"
+
+
+def test_srm_states_when_equal_weights_assumed_for_completed_experiment() -> None:
+    thresholds = VerdictThresholds()
+    completed_exp = Exposure(
+        as_of=None,
+        planned_weights={"control": 0.5, "variant": 0.5},
+        counts={"control": 105, "variant": 95},
+        weights_assumed_equal=True,
+    )
+    chk = check_srm(completed_exp, ExperimentResults(srm_p_value=None), thresholds)
+    assert chk.status == "PASS"
+    assert "equal weights assumed" in chk.detail.lower()
