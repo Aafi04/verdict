@@ -167,6 +167,8 @@ def emit_srm_fault_traffic(
 ) -> dict[str, int]:
     """Send skewed simulated traffic (simulating client drop-off on variant) to trigger SRM."""
     clean = base_url.rstrip("/")
+    # peek_sdk: determine flag assignment WITHOUT emitting an exposure event.
+    # get_experiment_flag requires enable_events=True, so we use get_identity_flags instead.
     peek_sdk = Flagsmith(
         environment_key=sim_env_key,
         api_url=f"{clean}/api/v1/",
@@ -189,8 +191,10 @@ def emit_srm_fault_traffic(
         while sent["control"] < control_target or sent["variant"] < variant_target:
             idx += 1
             vid = f"{seed_prefix}{uuid.uuid4().hex[:12]}"
-            peek = peek_sdk.get_experiment_flag(flag_name, identifier=vid)
-            arm = "variant" if str(getattr(peek, "value", "")) == "variant" else "control"
+            # Peek at assignment without recording an exposure (uses identity flags, not experiment flag).
+            identity_flags = peek_sdk.get_identity_flags(vid)
+            raw_arm = identity_flags.get_feature_value(flag_name)
+            arm = "variant" if str(raw_arm) == "variant" else "control"
 
             if arm == "control" and sent["control"] < control_target:
                 track_sdk.get_experiment_flag(flag_name, identifier=vid)
