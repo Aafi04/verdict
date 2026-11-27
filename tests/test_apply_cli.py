@@ -292,8 +292,61 @@ def test_apply_execute_succeeds_and_writes_audit_log(
     assert len(entries) == 1
     assert entries[0]["id"] == "7"
     assert entries[0]["verdict_hash"] == verdict_hash
-    assert entries[0]["approver"] == "human-typed"
+    # Under pytest (non-TTY stdin), approver must be recorded as "non-interactive"
+    assert entries[0]["approver"] == "non-interactive"
     assert entries[0]["change"]["payload"] == {"rollout_decision": "variant", "rollout_variant": 10}
+
+
+def test_apply_execute_records_human_typed_only_on_tty(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    calls: list[tuple[str, str, dict | None]] = []
+    _patch_rest_client(
+        monkeypatch,
+        exposures_points=[{"new_identities": {"control": 110, "verdict": 110}}],
+        results_payload=_ship_results_payload(),
+        recorded_calls=calls,
+    )
+    looks_path = tmp_path / "looks.jsonl"
+    audit_path = tmp_path / "audit.jsonl"
+
+    assert (
+        main(
+            [
+                "check",
+                "7",
+                "--live",
+                "--env",
+                "simulation",
+                "--looks-path",
+                str(looks_path),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    verdict_hash = json.loads(capsys.readouterr().out)["verdict_hash"]
+    monkeypatch.setattr("builtins.input", lambda _prompt: f"APPROVE 7 {verdict_hash[:8]}")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    rc = main(
+        [
+            "apply",
+            "7",
+            "--live",
+            "--env",
+            "simulation",
+            "--execute",
+            "--looks-path",
+            str(looks_path),
+            "--audit-path",
+            str(audit_path),
+            "--plain",
+        ]
+    )
+    assert rc == 0
+    entry = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
+    assert entry["approver"] == "human-typed"
 
 
 def test_rollback_dry_run_and_execute(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -382,5 +435,5 @@ def test_rollback_dry_run_and_execute(tmp_path: Path, monkeypatch, capsys) -> No
     assert any(m == "PUT" and path.endswith("/featurestates/99/") for m, path, _ in calls)
     rb_entry = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
     assert rb_entry["action"] == "rollback"
-    assert rb_entry["approver"] == "human-typed"
+    assert rb_entry["approver"] == "non-interactive"
     assert rb_entry["result"]["multivariate_feature_state_values"][0]["percentage_allocation"] == 0.0

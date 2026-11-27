@@ -242,3 +242,11 @@ def test_cli_live_check_uses_rest_client_and_logs_effect_look(
     assert payload["verdict"] == "HOLD"
     assert payload["experiment"]["simulated"] is True
     assert len(looks_path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_completed_experiment_with_cleared_rollout_infers_equal_weights() -> None:
+    detail = _sample_detail(exp_id=6, name="seeded_clear_win_sim_v2")
+    detail["status"] = "completed"
+    detail["experiment_rollout"] = None
+    weights, _ = RestClient._planned_weights_from_detail(detail)
+    assert weights == {"control": 0.5, "verdict": 0.5}

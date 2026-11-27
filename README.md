@@ -33,13 +33,13 @@ Feature-flag dashboards routinely headline **"86% chance to beat control"** righ
 
 ---
 
-## Architecture: Two Tracks, One Pipeline
+## Architecture & Flagsmith Integration
 
 ```text
   Visitors ──▶ FastAPI Quiz (:3000) ──SDK evaluate + events──▶ Flagsmith OSS (:8000)
                     │                                                  ▲
                SQLite log                                      Management REST API
-             (real vs sim-)                                            │
+             (real vs sim-)                                        (RestClient)
                     └──────────────▶ Verdict CLI & Report ◀────────────┘
                                        │   checks.py → policy.py → memo.py
                                        │   looks.jsonl · audit.jsonl · results.html
@@ -47,7 +47,13 @@ Feature-flag dashboards routinely headline **"86% chance to beat control"** righ
                                             requires typed APPROVE / ROLLBACK + drift check
 ```
 
-- **Track 2 (`verdict/`)**: Audits Flagsmith experiments (`RestClient` or offline `FixtureClient`), renders dark high-contrast static reports (`scripts/render_results.py`) and Rich CLI panels (`verdict/rich_ui.py`), and gates every flag mutation behind human typed approval.
+**Flagsmith features used:**
+- **Self-hosted OSS Flagsmith (`docker/docker-compose.yml`):** Flagsmith API/UI (`:8000`) + PostgreSQL analytics warehouse (`EXPERIMENTATION_ENABLED='true'`, `USE_POSTGRES_FOR_ANALYTICS='true'`).
+- **Multivariate Feature Flags:** `result_view` (`dashboard` vs `verdict`, 50/50 split) in Production; isolated sandbox flags (`seeded_fault_demo`, `seeded_clear_win_demo_v2`) in Simulation.
+- **Experimentation (A/B tests):** Exposure & conversion tracking (`Occurrence` metrics `shipped_ambiguous` and `held_clear_win`), on-demand exposure/results refresh, and `srm_p_value`.
+- **Management REST API (`RestClient`):** All live reads (`get_experiment`, `get_exposures`, `get_results`) and human-approved writes (`complete/`, `featurestates/` rollback) go through Flagsmith's REST API, with `FixtureClient` for offline evaluation/tests. *(Note: `scripts/g1_check.py` includes a Gate G1 probe against Flagsmith's optional MCP endpoint, but Verdict itself does not use MCP.)*
+
+- **Track 2 (`verdict/`)**: Audits Flagsmith experiments (`RestClient` or `FixtureClient`), renders dark high-contrast static reports (`scripts/render_results.py`) and Rich CLI panels (`verdict/rich_ui.py`), and gates every flag mutation behind human typed approval (`human-typed` only when running interactively on a TTY; `non-interactive` otherwise).
 - **Track 1 (`quiz/` + `docs/EXPERIMENT.md`)**: A live 2-scenario **"Ship or Hold?"** quiz behind Flagsmith multivariate flag `result_view` (`dashboard` vs `verdict`, 50/50 split) testing whether showing Verdict's decision memo reduces premature shipping (`shipped_ambiguous`) without causing false caution on clear wins (`held_clear_win`).
 
 ---
@@ -152,8 +158,15 @@ verdict apply ship --fixture           # dry-run proposal (never writes)
 ```
 
 ### 3. Run Self-Hosted Flagsmith + Quiz + Live Checks
+
+Copy `.env.example` to `.env` and set values locally (never commit `.env`). Required environment variable names:
+- **Flagsmith connection & auth:** `FLAGSMITH_URL`, `FLAGSMITH_API_KEY`, `FLAGSMITH_ENV_KEY`, `FLAGSMITH_EXPERIMENT_ID`
+- **Isolated Simulation sandbox:** `FLAGSMITH_SIM_ENV_KEY`, `FLAGSMITH_SIM_EXPERIMENT_ID`
+- **Quiz & LLM controls:** `QUIZ_COOKIE_SECRET`, `QUIZ_SIMULATED_MODE`, `QUIZ_SYNTHETIC_TOKEN`, `VERDICT_LLM` (`off` by default)
+- **Optional Gate G1 probe only:** `FLAGSMITH_MCP_URL`
+
 ```bash
-# Start Flagsmith OSS (:8000 API/UI, :8002 MCP, PostgreSQL analytics warehouse)
+# Start self-hosted Flagsmith OSS (:8000 API/UI + PostgreSQL analytics warehouse)
 docker compose -f docker/docker-compose.yml up -d
 
 # Start the Track 1 quiz (in simulated mode or configured .env)
@@ -172,6 +185,15 @@ verdict rollback seeded_clear_win_sim_v2 --live --env simulation --execute
 # Render dark 1080p static HTML report
 python -m scripts.render_results ship --fixture --out data/export/ship.html
 ```
+
+---
+
+## Known Limitations
+
+- **Mostly synthetic dataset:** Production Experiment `2` (`result_view_experiment_v2`) has `2` real exposures and `198` synthetic exposures (`sim-` prefix, `synthetic=1`) generated from fixed parameters (`commit 69b712a`). It validates the pipeline end-to-end and is **not** evidence about human decision behaviour; real-only (`N=2`) is reported honestly as `HOLD`.
+- **No multiplicity / sequential alpha adjustment:** Multiple experiments or metrics are evaluated individually without Bonferroni/FDR correction, though premature effect looks before reaching planned sample trigger a `looks` `WARN`.
+- **Guardrail interval rule updated after first look:** On the first post-freeze evaluation (`4/100` vs `12/100`), Flagsmith suppressed the guardrail interval (`< 5` control events). Verdict was updated to compute a 95% difference-in-proportions CI (`>= 50/arm`) and `HOLD` on unavailable intervals (`< 50/arm`) using the pre-registered `not_increase` rule without inventing a new numeric margin (documented in [`docs/EXPERIMENT.md`](docs/EXPERIMENT.md)).
+- **Ephemeral quick-tunnel hostname:** Public hosting uses a $0 Cloudflare Quick Tunnel (`trycloudflare.com`), whose hostname rotates if the tunnel process or host reboots (mitigated by the static redirect page, though returning visitors lose origin-scoped cookies across URL rotations).
 
 ---
 

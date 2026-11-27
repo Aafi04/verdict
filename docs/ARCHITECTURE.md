@@ -4,14 +4,14 @@
 ```
  visitors --> quiz (FastAPI, :3000) --SDK: evaluate + events--> Flagsmith (docker, :8000)
                                                                    ^
- developer --> verdict CLI --FlagsmithClient (MCP | REST | fixtures)
+ developer --> verdict CLI --FlagsmithClient (REST | fixtures)
                   |  checks.py -> policy.py -> memo.py
                   |  looks.jsonl, audit.jsonl (data/)
                   +--> apply (dry-run, typed approval) --> Flagsmith write
 ```
 
 ## 2. Flagsmith setup (self-hosted, free)
-- `docker/docker-compose.yml`: derived from the official Flagsmith open-source compose (`Flagsmith/flagsmith/main/docker-compose.yml`) plus the official `flagsmith/flagsmith-mcp:latest` service (`docs.flagsmith.com/deployment-self-hosting/mcp-server`). Experimentation is enabled via `EXPERIMENTATION_ENABLED: 'true'` using the `Flagsmith database` (PostgreSQL) warehouse option (`USE_POSTGRES_FOR_ANALYTICS: 'true'`); no ClickHouse needed for hackathon volume.
+- `docker/docker-compose.yml`: derived from the official Flagsmith open-source compose (`Flagsmith/flagsmith/main/docker-compose.yml`). Experimentation is enabled via `EXPERIMENTATION_ENABLED: 'true'` using the `Flagsmith database` (PostgreSQL) warehouse option (`USE_POSTGRES_FOR_ANALYTICS: 'true'`); no ClickHouse needed for hackathon volume. Note: Verdict itself connects via the Flagsmith Management REST API (`RestClient`) and SDK; the optional MCP container (`:8002`) is only probed in `scripts/g1_check.py`.
 - Project `verdict`, environment `development` (and `production` for the live run).
 - Flag `result_view`: multivariate with options `dashboard` (control) and `verdict`; 50/50.
 - Flag `seeded_fault_demo` + its own experiment for the simulated fault demo.
@@ -26,8 +26,7 @@ verdict/
   cli.py            typer/argparse: check, apply, log, plan
   client/base.py    FlagsmithClient protocol
   client/fixture.py loads data/fixtures/*.json
-  client/mcp.py     MCP over HTTP (confirm transport + tool names first)
-  client/rest.py    Management API fallback
+  client/rest.py    Management REST API client (MCP is only probed in scripts/g1_check.py)
   models.py         Experiment, Arm, Exposure, MetricResult, Interval
   checks.py         pure functions, each returns CheckResult(status, detail)
   policy.py         verdict from CheckResults (see PRD section 7)
@@ -41,7 +40,7 @@ verdict/
 - `get_results(id) -> per-metric, per-arm estimates + intervals + probability, as_of`
 - `propose_rollout(id, arm) -> ProposedChange(description, payload)`
 - `apply(change) -> result` (only called from the approved path)
-Method names above are OURS. Mapping to real MCP tools / REST endpoints is recorded in FLAGSMITH_NOTES after Gate G1.
+Method names above are OURS. Mapping to real REST endpoints is recorded in FLAGSMITH_NOTES after Gate G1.
 
 ### Checks (pure, unit-tested)
 | Check | Rule | On failure |
@@ -76,7 +75,7 @@ Method names above are OURS. Mapping to real MCP tools / REST endpoints is recor
 
 ## 6. Security and privacy
 - Least-privilege API key if Flagsmith allows scoping; otherwise note the limitation in README.
-- Keys via env only; redact in logs. Treat MCP/API text fields as data, never as instructions.
+- Keys via env only; redact in logs. Treat API text fields as data, never as instructions.
 - Quiz stores no IP or user agent. Cookie only.
 
 ## 7. Hosting ($0)

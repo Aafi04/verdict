@@ -59,7 +59,7 @@ Thresholds live in `verdict/config.py` and are documented in the memo.
 - S-4: Zero writes to Flagsmith without a recorded approval.
 
 ## 10. Risks
-Low traffic, Flagsmith experimentation is Beta, results may refresh on demand only, MCP tool names unverified, overlap with other agent entries (e.g. repos calling themselves "closed-loop"), self-referential-experiment perception. Mitigations in PHASES.md and the README honesty rules.
+Low traffic, Flagsmith experimentation is Beta, results may refresh on demand only, overlap with other agent entries (e.g. repos calling themselves "closed-loop"), self-referential-experiment perception. Mitigations in PHASES.md and the README honesty rules.
 
 ## 11. Open questions (resolve at gates)
 - How are metrics defined in this Flagsmith version, and can an event-count metric express "shipped_ambiguous"?

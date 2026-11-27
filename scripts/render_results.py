@@ -317,7 +317,11 @@ def render_results_html(
     }
 
     audit_all = read_looks(audit_path, limit=100)
-    audit_entries = [a for a in audit_all if str(a.get("id")) == str(experiment.id)]
+    exp_audits = [a for a in audit_all if str(a.get("id")) == str(experiment.id)]
+    audit_entries = [
+        a for a in exp_audits if str(a.get("verdict_hash") or "") == verdict.verdict_hash
+    ]
+    audit_excluded_count = len(exp_audits) - len(audit_entries)
 
     env_flag = "fixture" if is_fixture else env_name.strip().lower()
     approval_cmd = f"verdict apply {experiment.id} --live --env {env_flag} --execute"
@@ -345,6 +349,7 @@ def render_results_html(
         approval_cmd=approval_cmd,
         approval_phrase=approval_phrase,
         audit_entries=audit_entries,
+        audit_excluded_count=audit_excluded_count,
         page_label=page_label or ("Fixture" if is_fixture else env_flag.upper()),
         freeze_utc=FREEZE_UTC_ISO,
         data_tag="data-complete",

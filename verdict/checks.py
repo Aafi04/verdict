@@ -132,6 +132,12 @@ def check_srm(
     fs_p = results.srm_p_value
 
     if verdict_p is None and fs_p is None:
+        if exposure.total > 0 and len(exposure.planned_weights) < 2:
+            return CheckResult(
+                name="srm",
+                status="WARN",
+                detail="SRM unavailable: planned allocation weights cover fewer than 2 arms.",
+            )
         return CheckResult(name="srm", status="WARN", detail="No exposures yet to test SRM.")
 
     v_fail = verdict_p is not None and verdict_p < thresholds.srm_p_threshold

@@ -510,7 +510,11 @@
     <section class="hero hero-{{ verdict.verdict }}">
       <div class="hero-top">
         <span class="verdict-badge badge-{{ verdict.verdict }}">COMBINED VERDICT: {{ verdict.verdict }}</span>
+        {% if cohort.real_n == 0 %}
+        <span class="small-badge badge-HOLD">REAL-ONLY: n/a (no real data)</span>
+        {% else %}
         <span class="small-badge badge-{{ cohort.real_only_verdict.verdict }}">REAL-ONLY VERDICT: {{ cohort.real_only_verdict.verdict }}</span>
+        {% endif %}
       </div>
       <h1>{{ experiment.name }}</h1>
       <p class="hero-reason">{{ memo.summary }}</p>
@@ -634,7 +638,11 @@
     </ul>
 
     <h2 class="section-title">Cohort Comparison (Combined vs Real-Only)</h2>
-    {% if cohort.disagreement %}
+    {% if cohort.real_n == 0 %}
+    <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--hold); padding: 14px 18px;">
+      Simulation-only dataset: <code>0</code> real exposures recorded; all <code>N={{ cohort.combined_n }}</code> exposures are synthetic. Real-only cohort evaluation is <strong>n/a (no real data)</strong>.
+    </div>
+    {% elif cohort.disagreement %}
     <div class="disagree-box">
       {{ cohort.disagreement_detail }} Synthetic data drove the combined total; real-only responses alone do not justify shipping.
     </div>
@@ -667,9 +675,16 @@
       <article class="card" id="cohortRealCard">
         <div class="card-head">
           <span class="card-title">Real-Only Cohort (synthetic=0)</span>
+          {% if cohort.real_n == 0 %}
+          <span class="small-badge badge-HOLD">n/a (no real data)</span>
+          {% else %}
           <span class="small-badge badge-{{ cohort.real_only_verdict.verdict }}">{{ cohort.real_only_verdict.verdict }}</span>
+          {% endif %}
         </div>
         <div class="big-stat">N = {{ cohort.real_n }}</div>
+        {% if cohort.real_n == 0 %}
+        <p class="hero-sub">Real-only: n/a (no real data). No human visitors were recorded for this Simulation experiment.</p>
+        {% else %}
         <div class="stat-row">
           {% for arm, cnt in cohort.real_only_exposure.counts.items() %}
           <span>{{ arm }}: <strong>{{ cnt }}</strong></span>
@@ -680,6 +695,7 @@
           <li>{{ r }}</li>
           {% endfor %}
         </ul>
+        {% endif %}
       </article>
     </div>
 
@@ -703,15 +719,16 @@
         </div>
       </div>
 
-      {% if audit_entries %}
       <p style="margin: 16px 0 6px;"><strong>Recorded Approvals (<code>audit.jsonl</code>)</strong></p>
+      <p class="card-meta" style="margin: 0 0 8px;">Showing only approvals matching current verdict hash (<code>{{ verdict.verdict_hash[:12] }}...</code>){% if audit_excluded_count %} — {{ audit_excluded_count }} prior/mismatched or legacy entry(ies) excluded{% endif %}.</p>
+      {% if audit_entries %}
       <ul>
         {% for item in audit_entries %}
-        <li><code>{{ item.ts }}</code> — {{ item.approver }} ({{ item.action or "apply" }}) <code>{{ item.verdict_hash[:12] if item.verdict_hash else "" }}</code>: {{ item.change.description if item.change else "" }}</li>
+        <li><code>{{ item.ts }}</code> — <code>{{ item.approver }}</code> ({{ item.action or "apply" }}) <code>{{ item.verdict_hash[:12] if item.verdict_hash else "" }}</code>: {{ item.change.description if item.change else "" }}</li>
         {% endfor %}
       </ul>
       {% else %}
-      <p class="card-meta" style="margin: 14px 0 0;">No flag mutations recorded for this experiment.</p>
+      <p class="card-meta" style="margin: 8px 0 0;">No flag mutations recorded matching current verdict hash.</p>
       {% endif %}
     </section>
 

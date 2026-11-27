@@ -298,6 +298,7 @@ def _cmd_apply(args: argparse.Namespace) -> int:
             )
             return 1
 
+        approver = "human-typed" if sys.stdin.isatty() else "non-interactive"
         apply_result: dict[str, Any] = client.apply(change)
         audit_entry = {
             "ts": datetime.now(UTC).isoformat(),
@@ -307,7 +308,7 @@ def _cmd_apply(args: argparse.Namespace) -> int:
             "verdict_hash": verdict.verdict_hash,
             "change": change.model_dump(),
             "result": apply_result,
-            "approver": "human-typed",
+            "approver": approver,
         }
         append_audit(audit_entry, audit_path=audit_path)
         if args.plain or not render_rich_execution_result(
@@ -362,6 +363,7 @@ def _cmd_rollback(args: argparse.Namespace) -> int:
             print("ABORTED: rollback approval phrase did not match; no changes written.", file=sys.stderr)
             return 1
 
+        approver = "human-typed" if sys.stdin.isatty() else "non-interactive"
         rb_result = client.rollback(change)
         audit_entry = {
             "ts": datetime.now(UTC).isoformat(),
@@ -371,7 +373,7 @@ def _cmd_rollback(args: argparse.Namespace) -> int:
             "simulated": experiment.simulated,
             "change": change.model_dump(),
             "result": rb_result,
-            "approver": "human-typed",
+            "approver": approver,
         }
         append_audit(audit_entry, audit_path=audit_path)
         if args.plain or not render_rich_execution_result(

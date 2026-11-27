@@ -138,8 +138,18 @@ class RestClient:
             arm_key = opt_key_by_id.get(mv_id, f"Variant_{mv_id}")
             weights[arm_key] = pct / 100.0
 
+        # Flagsmith deletes experiment_rollout when an experiment is completed, so mv_allocs is empty.
+        # Fall back to equal split across control + multivariate options when status == "completed".
+        if not weights and detail.get("status") == "completed" and opt_key_by_id:
+            total_arms = 1 + len(opt_key_by_id)
+            share = 1.0 / total_arms
+            ordered: dict[str, float] = {"control": share}
+            for arm_key in opt_key_by_id.values():
+                ordered[arm_key] = share
+            return ordered, opt_key_by_id
+
         control_pct = max(0.0, 100.0 - variant_pct_sum)
-        ordered: dict[str, float] = {"control": control_pct / 100.0}
+        ordered = {"control": control_pct / 100.0}
         ordered.update(weights)
         return ordered, opt_key_by_id
 
